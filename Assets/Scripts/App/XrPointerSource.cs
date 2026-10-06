@@ -31,7 +31,19 @@ namespace XrSpatial.App
             go.transform.SetParent(xrOrigin, false);
             var s = go.AddComponent<XrPointerSource>();
             s.Head = head;
+            s.BindHead();
             return s;
+        }
+
+        // Needs Head, which Create assigns only after AddComponent has already run Awake.
+        void BindHead()
+        {
+            var tpd = Head.GetComponent<TrackedPoseDriver>();
+            if (!tpd) tpd = Head.gameObject.AddComponent<TrackedPoseDriver>();
+            tpd.positionInput = new InputActionProperty(new InputAction(binding: "<XRHMD>/centerEyePosition", expectedControlType: "Vector3"));
+            tpd.rotationInput = new InputActionProperty(new InputAction(binding: "<XRHMD>/centerEyeRotation", expectedControlType: "Quaternion"));
+            tpd.trackingType = TrackedPoseDriver.TrackingType.RotationAndPosition;
+            tpd.updateType = TrackedPoseDriver.UpdateType.UpdateAndBeforeRender;
         }
 
         void Awake()
@@ -41,13 +53,6 @@ namespace XrSpatial.App
             m_Right = new HandInput("RightHand");
             LeftHand = NewHand("LeftHand", new Color(0.5f, 0.6f, 1f));
             RightHand = NewHand("RightHand", new Color(1f, 0.7f, 0.4f));
-
-            var tpd = Head.GetComponent<TrackedPoseDriver>();
-            if (!tpd) tpd = Head.gameObject.AddComponent<TrackedPoseDriver>();
-            tpd.positionInput = new InputActionProperty(new InputAction(binding: "<XRHMD>/centerEyePosition", expectedControlType: "Vector3"));
-            tpd.rotationInput = new InputActionProperty(new InputAction(binding: "<XRHMD>/centerEyeRotation", expectedControlType: "Quaternion"));
-            tpd.trackingType = TrackedPoseDriver.TrackingType.RotationAndPosition;
-            tpd.updateType = TrackedPoseDriver.UpdateType.UpdateAndBeforeRender;
         }
 
         Transform NewHand(string name, Color c)
