@@ -15,7 +15,7 @@ The application exists end to end in a flat-window form: it captures a real Wind
 |---|---|---|
 | Spatial math | `Assets/Scripts/Core/QuadMath.cs` | Plane fitting, convexity/validity checks, winding so a picture is never mirrored for the viewer, projective (perspective-correct) picture mapping for any planar quad, ray to picture coordinate and inverse, crop math, aspect fitting |
 | Layout data | `Assets/Scripts/Core/Layout.cs` | Sources, surfaces (4 corners + crop rectangle), JSON save/load, atomic write, per-application key |
-| Capture helper | `Tools/XrssCapture` (.NET 8) | Windows.Graphics.Capture of a window or monitor into a shared-memory frame buffer; window list; self-contained 42 MB publish |
+| Capture helper | `Tools/XrssCapture` (.NET 8) | Windows.Graphics.Capture of a window or monitor into a shared-memory frame buffer; window list; self-contained publish of about 41 MB |
 | Capture client | `Assets/Scripts/Capture` | Starts the helper hidden, maps its memory with Win32 `OpenFileMapping`/`MapViewOfFile`, uploads the newest frame, builds a mip-mapped anisotropic view texture; test-pattern source; restart if the window reappears |
 | Renderer | `Assets/Resources/Shaders/XrSpatialPanel.shader`, `PanelView.cs` | Per-pixel projective mapping with crop, corner handles, edge highlight |
 | Tools | `Assets/Scripts/Spatial/SurfaceTool.cs` | Place 4 points, drag one corner (stays planar), grip-grab move/turn/scale, crop drag, delete, turn picture, fit aspect, interact mode |
@@ -39,7 +39,7 @@ Design decisions worth knowing:
 | Unity 6000.3.9f1 EditMode | 24/24 pass (math, layout, protocol constants vs the helper copy, window-list parsing, input mapping, aspect fitting) |
 | Unity 6000.3.9f1 PlayMode | 12/12 pass: scripted-pointer tests for placing 4 points, anticlockwise order fix, bad-shape rejection, corner drag stays planar, grip move and scale, crop panel creation, auto-fit, layout save/reload with crops, shared source texture; plus real-window capture through the helper (size, orientation, window position) and a clear error when no window matches |
 | Unity 6000.6.4f1 (on a copy) | EditMode 24/24; PlayMode 11 passed, 0 failed, 1 skipped (the live-capture test needs the helper/fixture built in that copy) |
-| Windows player build | Builds with 0 errors (98 MB + 42 MB self-contained helper) |
+| Windows player build | Builds with 0 errors (about 140 MB player folder, helper about 41 MB self-contained) |
 | Flat player, visual | Live Notepad window captured and shown in 3D (title bar, tabs, text, correct aspect and orientation); a demo of six freely angled screens plus a cropped minimap, picture upright and not mirrored |
 | Capture helper | `--list`, `--snap` on two real windows, `--run` against Notepad and a test window |
 
@@ -55,10 +55,9 @@ Bugs found and fixed along the way (all caught by looking at the output or by te
 
 1. **Never run in a headset.** Unverified: aim pose and trigger/grip/stick/menu bindings on the Steam Frame controllers, palette toggle on the off hand, controller stand-in size and placement, floor origin behaviour in SteamVR, comfortable sizes and distances.
 2. **Click forwarding is not verified end to end.** The mapping math is unit-tested. In this environment `SendInput` reports success but the clicks never arrive at desktop windows (the tool sandbox swallows injected input), so I could not confirm a real click. A fixture is ready: `Tools\ClickTest` (logs every click) and the player flag `--xrss-selftest-click SX,SY`. Please run it on a normal desktop, or wait for the Codex task.
-3. During that debugging a few synthetic clicks landed on windows near the test area (the click targets were probably covered by your terminal or Notepad). They were plain clicks in text areas, not keystrokes or drags, and I did not see any change, but you may want to glance at your open Notepad tabs.
-4. **Limits by design:** absolute pointer only (mouse-look games will not respond); frames above 3840x2160 are rejected; Windows only delivers capture frames when a window changes, so a static window reports "static"; forwarded clicks cannot reach an app running as administrator (the app shows a message if Windows refuses).
-5. **Performance is unmeasured in VR.** The upload path is one memory copy per frame (about 8 MB at 1080p) plus a GPU blit for mip generation; fine for a handful of panels on this PC in the flat player, unknown in a headset.
-6. Not done by request: screen thickness, glow, shadow, curvature. Not done for lack of a way to test: passthrough.
+3. **Limits by design:** absolute pointer only (mouse-look games will not respond); frames above 3840x2160 are rejected; Windows only delivers capture frames when a window changes, so a static window reports "static"; forwarded clicks cannot reach an app running as administrator (the app shows a message if Windows refuses).
+4. **Performance is unmeasured in VR.** The upload path is one memory copy per frame (about 8 MB at 1080p) plus a GPU blit for mip generation; fine for a handful of panels on this PC in the flat player, unknown in a headset.
+5. Not done by request: screen thickness, glow, shadow, curvature. Not done for lack of a way to test: passthrough.
 
 ## 6. What Codex should and should not do
 
