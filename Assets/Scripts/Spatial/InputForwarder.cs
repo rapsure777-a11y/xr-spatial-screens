@@ -20,6 +20,7 @@ namespace XrSpatial.Spatial
 
         [StructLayout(LayoutKind.Sequential)] struct MOUSEINPUT { public int dx, dy; public uint mouseData, dwFlags, time; public UIntPtr dwExtraInfo; }
         [StructLayout(LayoutKind.Explicit, Size = 40)] struct INPUT { [FieldOffset(0)] public uint type; [FieldOffset(8)] public MOUSEINPUT mi; }
+        [StructLayout(LayoutKind.Sequential)] struct RECT { public int left, top, right, bottom; }
         const uint INPUT_MOUSE = 0, MOVE = 0x1, LEFTDOWN = 0x2, LEFTUP = 0x4, RIGHTDOWN = 0x8, RIGHTUP = 0x10, WHEEL = 0x800, ABSOLUTE = 0x8000, VIRTUALDESK = 0x4000;
 
 #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
@@ -34,7 +35,10 @@ namespace XrSpatial.Spatial
         [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
         [DllImport("user32.dll")] static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool attach);
         [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr hwnd);
+        [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out RECT rect, int size);
+        static bool TryFrameBounds(IntPtr hwnd, out RECT r) => DwmGetWindowAttribute(hwnd, 9 /* DWMWA_EXTENDED_FRAME_BOUNDS */, out r, Marshal.SizeOf<RECT>()) == 0;
 #else
+        static bool TryFrameBounds(IntPtr hwnd, out RECT r) { r = default; return false; }
         static uint SendInput(uint n, INPUT[] inputs, int size) => 0;
         static int GetSystemMetrics(int index) => 0;
         static bool SetForegroundWindow(IntPtr hwnd) => false;
@@ -65,11 +69,15 @@ namespace XrSpatial.Spatial
             if (!Enabled || !Tool || !Tool.InteractMode) { Release(); return; }
             var panel = Tool.InteractPanel;
             var s = Tool.InteractState;
-            if (!panel || panel.Source == null) { Release(); return; }
+            if (!panel || panel.Source == null || panel.Source.Def.kind == "pattern") { Release(); return; }   // the test pattern is not a real window: nothing to click
             var win = panel.Source.Window;
             if (!win.IsValid || !win.alive) { Release(); return; }
             Vector2 src = panel.UvToSource(Tool.InteractUv);
-            var px = SourceToDesktop(src, win.x, win.y, win.width, win.height);
+            // The window rectangle is read here, in this process, so it is in the same pixel space as the SendInput coordinates whatever the DPI awareness of the helper
+            // process; it also follows a window the user has moved since the last captured frame. The helper's rectangle is the fallback (monitors have no window handle).
+            int wx = win.x, wy = win.y, ww = win.width, wh = win.height;
+            if (win.hwnd != 0 && TryFrameBounds(new IntPtr(win.hwnd), out var fb) && fb.right > fb.left && fb.bottom > fb.top) { wx = fb.left; wy = fb.top; ww = fb.right - fb.left; wh = fb.bottom - fb.top; }
+            var px = SourceToDesktop(src, wx, wy, ww, wh);
             int vx = GetSystemMetrics(76), vy = GetSystemMetrics(77), vw = GetSystemMetrics(78), vh = GetSystemMetrics(79);
             if (vw <= 0 || vh <= 0) return;
             var abs = DesktopToAbsolute(px, vx, vy, vw, vh);
@@ -81,7 +89,7 @@ namespace XrSpatial.Spatial
             // click lands on the window and not on whatever was on top.
             if (s.triggerDown && !m_Left && !m_WaitDown)
             {
-                if (win.hwnd != 0 && !win.foreground) { ForceForeground(new IntPtr(win.hwnd)); m_WaitDown = true; m_WaitStart = Time.unscaledTime; m_UpAfterDown = false; LastAction = "focusing"; }
+                if (win.hwnd != 0 && !win.foreground) { ForceForeground(new IntPtr(win.hwnd)); FocusAttempts++; m_WaitDown = true; m_WaitStart = Time.unscaledTime; m_UpAfterDown = false; LastAction = "focusing"; }
                 else { Send(MOVE | ABSOLUTE | VIRTUALDESK | LEFTDOWN, abs.x, abs.y, 0); m_Left = true; LastAction = "left down"; }
             }
             if (m_WaitDown)
@@ -122,6 +130,7 @@ namespace XrSpatial.Spatial
         }
 
         /// <summary>SendInput failed on the last call (Windows refused: for example the target runs as administrator, or this process is sandboxed). Shown to the user once.</summary>
+        public static int FocusAttempts { get; private set; }
         public static int FailedSends { get; private set; }
         public static int LastError { get; private set; }
 

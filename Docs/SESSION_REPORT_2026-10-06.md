@@ -54,7 +54,7 @@ Bugs found and fixed along the way (all caught by looking at the output or by te
 ## 5. Known issues and honest limits
 
 1. **Never run in a headset.** Unverified: aim pose and trigger/grip/stick/menu bindings on the Steam Frame controllers, palette toggle on the off hand, controller stand-in size and placement, floor origin behaviour in SteamVR, comfortable sizes and distances.
-2. **Click forwarding is not verified end to end.** The mapping math is unit-tested. In this environment `SendInput` reports success but the clicks never arrive at desktop windows (the tool sandbox swallows injected input), so I could not confirm a real click. A fixture is ready: `Tools\ClickTest` (logs every click) and the player flag `--xrss-selftest-click SX,SY`. Please run it on a normal desktop, or wait for the Codex task.
+2. **Click forwarding:** superseded. It was later verified end to end on the desktop (see `Docs/INPUT_FORWARDING.md`); an earlier claim here that the sandbox swallowed injected input was wrong. Still unverified in the headset.
 3. **Limits by design:** absolute pointer only (mouse-look games will not respond); frames above 3840x2160 are rejected; Windows only delivers capture frames when a window changes, so a static window reports "static"; forwarded clicks cannot reach an app running as administrator (the app shows a message if Windows refuses).
 4. **Performance is unmeasured in VR.** The upload path is one memory copy per frame (about 8 MB at 1080p) plus a GPU blit for mip generation; fine for a handful of panels on this PC in the flat player, unknown in a headset.
 5. Not done by request: screen thickness, glow, shadow, curvature. Not done for lack of a way to test: passthrough.

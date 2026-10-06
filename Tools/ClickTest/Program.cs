@@ -13,6 +13,7 @@ static class Program
     {
         int x = a.Length > 3 ? int.Parse(a[0]) : 2700, y = a.Length > 3 ? int.Parse(a[1]) : 300, w = a.Length > 3 ? int.Parse(a[2]) : 700, h = a.Length > 3 ? int.Parse(a[3]) : 500;
         string log = a.Length > 4 ? a[4] : Path.Combine(Path.GetTempPath(), "clicktest.txt");
+        Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);       // real pixels, so logged coordinates match what the player computes
         File.WriteAllText(log, "started\n");
         var f = new Form { Text = "XRSS ClickTest", StartPosition = FormStartPosition.Manual, Location = new Point(x, y), ClientSize = new Size(w, h), BackColor = Color.FromArgb(30, 60, 90) };
         var l = new Label { Dock = DockStyle.Fill, ForeColor = Color.White, Font = new Font("Consolas", 22), Text = "click me", TextAlign = ContentAlignment.MiddleCenter };
@@ -26,6 +27,8 @@ static class Program
             File.AppendAllText(log, msg + "\n");
         };
         f.MouseDown += h1; l.MouseDown += h1;
+        MouseEventHandler wheel = (s, e) => File.AppendAllText(log, $"wheel {e.Delta} at client {e.X},{e.Y}\n");
+        f.MouseWheel += wheel; l.MouseWheel += wheel;
         Application.Run(f);
     }
 }

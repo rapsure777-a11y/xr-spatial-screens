@@ -255,6 +255,7 @@ namespace XrSpatial.App
             bool Has(string n) => Array.IndexOf(a, n) >= 0;
             string layout = Arg("--xrss-layout");
             if (layout != null) Workspace.LoadLayout(layout);
+            if (Has("--xrss-ephemeral")) { Workspace.LoadLayout("ephemeral-" + Guid.NewGuid().ToString("N")); Workspace.AutoSave = false; }    // empty layout, nothing saved: for scripted tests
             if (Has("--xrss-pattern")) AddPattern();
             string proc = Arg("--xrss-process"), title = Arg("--xrss-title");
             if (proc != null || title != null) Workspace.AddSource(new SourceDef { kind = "window", processName = proc, titleContains = title, label = proc ?? title });
