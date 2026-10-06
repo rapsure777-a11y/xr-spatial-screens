@@ -4,7 +4,7 @@ Updated: 2026-10-06 (session 1). Owner/integrator: Claude. Specialists: Codex (b
 
 - **Branch:** `develop` (integration). `main` = stable only (still the scaffold; promote after the first headset test).
 - **Unity:** 6000.3.9f1 primary. 6000.6.4f1 compile/test checked (see Build/test). OpenXR 1.18, URP 17.3, Input System 1.20, D3D11, Mono, Windows x64.
-- **Build/test:** EditMode 21/21, PlayMode 8/8 (6000.3.9f1). Windows player builds (98 MB + helper). Not yet run in a headset.
+- **Build/test:** Unity 6000.3.9f1: EditMode 24/24, PlayMode 12/12 (incl. real-window capture through the helper). Unity 6000.6.4f1 (on a copy of the project): EditMode 24/24, PlayMode 11 passed, 0 failed, 1 skipped (the live-capture test needs the helper and ClickTest built). Windows player builds (98 MB + 42 MB self-contained helper). Not yet run in a headset.
 
 ## Product
 A spatial compositor: capture a Windows window/monitor, then *draw* where its screen exists by placing 4 corner points with a VR controller. The image is mapped projectively onto that quad (correct under any tilt). Corners can be grabbed and edited, the whole screen can be moved/turned/scaled, rectangles of the source can be cropped into independent panels, layouts are saved per application. See `Docs/ARCHITECTURE.md`.
@@ -15,7 +15,7 @@ A spatial compositor: capture a Windows window/monitor, then *draw* where its sc
 - **Interaction (scripted-pointer PlayMode tests):** place 4 points -> screen (order fixed for the viewer, planarised, bad shapes rejected), drag a corner (stays planar), grip-grab move/turn/scale, crop drag -> new panel on the same source, save/reload layout (crops included).
 - **UI:** world-space palette (UGUI, laser hit-test), desktop IMGUI control panel (window picker, sources, screens, save/load), simulated desktop pointer for no-headset work.
 - **Persistence:** JSON per app key in `persistentDataPath/layouts`, atomic write, sources re-found by process + title.
-- **Input forwarding:** implemented (laser -> panel UV -> crop-aware source UV -> window rect -> SendInput); the math is unit-tested; the live click path has NOT been verified end to end.
+- **Input forwarding:** implemented (laser -> panel UV -> crop-aware source UV -> captured-window rectangle -> SendInput, with a focus step first). Math unit-tested. The live click could NOT be verified in this environment: the tool sandbox accepts SendInput (returns success) but the clicks never reach desktop windows. Fixtures are ready: `ToolsClickTest` (logs every click) + player flag `--xrss-selftest-click SX,SY`; run on a normal desktop.
 
 ## Known broken / untested / limits
 - **Never run in a headset.** VR controller bindings (`XrPointerSource`, `HandInput`) are copied from the proven Worlds of Mini Golf project but unverified here (aim pose, grip/trigger/stick/menu, palette toggle on the off hand's menu/primary).
