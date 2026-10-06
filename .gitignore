@@ -1,0 +1,32 @@
+# Unity
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/Screenshots/
+*.csproj
+*.sln
+*.slnx
+*.suo
+*.user
+*.pidb
+*.booproj
+.vs/
+.idea/
+.vscode/
+*.pdb
+*.mdb
+*.apk
+*.unitypackage
+sysinfo.txt
+crashlytics-build.properties
+# Capture helper (dotnet)
+Tools/XrssCapture/bin/
+Tools/XrssCapture/obj/
+Tools/XrssCapture/publish/
+# Generated at build time and copied next to the player / StreamingAssets
+Assets/StreamingAssets/XrssCapture/
+Assets/StreamingAssets/XrssCapture.meta

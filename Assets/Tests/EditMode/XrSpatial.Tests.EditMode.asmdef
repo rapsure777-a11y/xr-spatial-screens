@@ -1,0 +1,14 @@
+{
+    "name": "XrSpatial.Tests.EditMode",
+    "rootNamespace": "XrSpatial.Tests",
+    "references": [ "XrSpatial.Core", "XrSpatial.Capture", "XrSpatial.Spatial", "UnityEngine.TestRunner", "UnityEditor.TestRunner" ],
+    "includePlatforms": [ "Editor" ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": true,
+    "precompiledReferences": [ "nunit.framework.dll" ],
+    "autoReferenced": false,
+    "defineConstraints": [ "UNITY_INCLUDE_TESTS" ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

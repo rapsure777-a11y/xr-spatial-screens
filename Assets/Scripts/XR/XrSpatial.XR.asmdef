@@ -1,0 +1,14 @@
+{
+    "name": "XrSpatial.XR",
+    "rootNamespace": "XrSpatial.XR",
+    "references": [ "Unity.XR.OpenXR", "Unity.InputSystem" ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
