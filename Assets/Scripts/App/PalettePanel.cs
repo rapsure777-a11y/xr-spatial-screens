@@ -2,15 +2,17 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using XrSpatial.Capture;
 using XrSpatial.Core;
 using XrSpatial.Spatial;
 
 namespace XrSpatial.App
 {
     /// <summary>
-    /// The tool palette: a small world-space panel held over the non-pointing wrist (or floating in front of the head without controllers). The pointing hand's laser
+    /// The tool palette: a small world-space panel held over the non-pointing wrist (or floating beside the head without controllers). The pointing hand's laser
     /// highlights a button and the trigger presses it. UGUI is used for layout/text only; hit-testing is done by intersecting the laser with the canvas plane, so no
-    /// EventSystem or physics raycaster is needed (and nothing in the scene can steal the click).
+    /// EventSystem or physics raycaster is needed (and nothing in the scene can steal the click). Two pages: the tools, and a window picker (so a window can be
+    /// chosen to capture without leaving VR).
     /// </summary>
     public sealed class PalettePanel : MonoBehaviour, IUiLayer
     {
@@ -18,15 +20,27 @@ namespace XrSpatial.App
         public SpatialWorkspace Workspace;
         public IPointerSource Pointer;
         public Action OnAddPattern;
+        public Action<CapturableWindow> OnPickWindow;
+        public Action<int> OnPickMonitor;
         public bool Visible { get; private set; } = true;
 
-        const float W = 560f, H = 700f, Scale = 0.00055f;          // 0.31 m x 0.385 m
+        const float W = 560f, H = 820f, Scale = 0.00055f;          // 0.31 m x 0.45 m
+        const int WindowsPerPage = 6;
         Canvas m_Canvas;
         RectTransform m_Rect;
         Text m_Status;
-        readonly List<Btn> m_Buttons = new List<Btn>();
+        readonly List<Btn> m_Main = new List<Btn>();
+        readonly List<Btn> m_Windows = new List<Btn>();
+        List<Btn> Current => m_Page == Page.Main ? m_Main : m_Windows;
         Btn m_Hover;
         Font m_Font;
+        enum Page { Main, Windows }
+        Page m_Page = Page.Main;
+        List<CapturableWindow> m_WindowList = new List<CapturableWindow>();
+        int m_WindowPage;
+        bool m_Refreshing;
+        bool m_Placed;
+        volatile bool m_RebuildWindows;
 
         sealed class Btn
         {
@@ -59,24 +73,89 @@ namespace XrSpatial.App
             void Add(Func<string> text, Action action, Func<bool> active = null)
             {
                 float x = 20 + col * (bw + 20);
-                var b = new Btn { text = text, action = action, active = active };
-                b.rect = Img("Btn", m_Rect, new Vector2(x, y - bh), new Vector2(bw, bh), Color.white, out b.bg).rectTransform;
-                b.label = Txt("Label", b.rect, new Vector2(8, 0), new Vector2(bw - 16, bh), 27, TextAnchor.MiddleCenter, Color.white);
-                m_Buttons.Add(b);
+                m_Main.Add(MakeBtn(new Vector2(x, y - bh), new Vector2(bw, bh), text, action, active));
                 if (++col == 2) { col = 0; y -= bh + gap; }
             }
             Add(() => Tool.Mode == ToolMode.Place ? $"Placing {Tool.PlacedCount}/4" : "New screen", () => { if (Tool.Mode == ToolMode.Place) Tool.SetIdle(); else Tool.BeginPlace(); }, () => Tool.Mode == ToolMode.Place);
             Add(() => Tool.Mode == ToolMode.Crop ? "Cropping..." : "Crop", () => { if (Tool.Mode == ToolMode.Crop) Tool.SetIdle(); else Tool.BeginCrop(); }, () => Tool.Mode == ToolMode.Crop);
+            Add(() => "Capture window...", ShowWindows);
+            Add(() => "Next source", Tool.CycleSource);
             Add(() => "Delete screen", Tool.DeleteSelected);
             Add(() => "Turn picture", Tool.RotateSelectedPicture);
             Add(() => Tool.InteractMode ? "Interact: ON" : "Interact: off", Tool.ToggleInteract, () => Tool.InteractMode);
             Add(() => Tool.TouchPlacement ? "Points: touch" : "Points: laser", Tool.ToggleTouch);
-            Add(() => "Next source", Tool.CycleSource);
             Add(() => "Test pattern", () => OnAddPattern?.Invoke());
+            Add(() => "Fit picture", Tool.FitSelectedAspect);
             Add(() => "Reset crop", Tool.ResetSelectedCrop);
             Add(() => "Save layout", () => { Workspace.SaveNow(); Tool.Say("Layout saved", 2f); });
             Add(() => "Hide palette", () => SetVisible(false));
         }
+
+        Btn MakeBtn(Vector2 pos, Vector2 size, Func<string> text, Action action, Func<bool> active)
+        {
+            var b = new Btn { text = text, action = action, active = active };
+            b.rect = Img("Btn", m_Rect, pos, size, Color.white, out b.bg).rectTransform;
+            b.label = Txt("Label", b.rect, new Vector2(8, 0), new Vector2(size.x - 16, size.y), 26, TextAnchor.MiddleCenter, Color.white);
+            return b;
+        }
+
+        // ------------------------------------------------------------------ window picker page
+
+        void ShowWindows()
+        {
+            m_Page = Page.Windows; m_WindowPage = 0;
+            foreach (var b in m_Main) b.rect.gameObject.SetActive(false);
+            RefreshWindows();
+        }
+
+        void ShowMain()
+        {
+            m_Page = Page.Main;
+            foreach (var b in m_Windows) Destroy(b.rect.gameObject);
+            m_Windows.Clear();
+            foreach (var b in m_Main) b.rect.gameObject.SetActive(true);
+        }
+
+        void RefreshWindows()
+        {
+            if (!m_Refreshing)
+            {
+                m_Refreshing = true;
+                CaptureCatalog.ListAsync().ContinueWith(t => { m_WindowList = t.Result; m_Refreshing = false; m_RebuildWindows = true; });
+            }
+            m_RebuildWindows = true;
+        }
+
+        void BuildWindowButtons()
+        {
+            m_RebuildWindows = false;
+            foreach (var b in m_Windows) Destroy(b.rect.gameObject);
+            m_Windows.Clear();
+            float bh = 70f, gap = 10f, y = H - 160 - bh;
+            int first = m_WindowPage * WindowsPerPage;
+            for (int i = 0; i < WindowsPerPage; i++)
+            {
+                int idx = first + i;
+                if (idx >= m_WindowList.Count) break;
+                var w = m_WindowList[idx];
+                string label = $"{w.process}: {Short(w.title, 26)}";
+                m_Windows.Add(MakeBtn(new Vector2(20, y), new Vector2(W - 40, bh), () => label, () => { OnPickWindow?.Invoke(w); Tool.Say("Capturing " + w.process, 3f); ShowMain(); }, null));
+                y -= bh + gap;
+            }
+            if (m_WindowList.Count == 0) m_Windows.Add(MakeBtn(new Vector2(20, y), new Vector2(W - 40, bh), () => m_Refreshing ? "Looking for windows..." : "No windows found (tap to retry)", RefreshWindows, null));
+            float by = 20f, bw = (W - 80) / 3f;
+            m_Windows.Add(MakeBtn(new Vector2(20, by), new Vector2(bw, 80), () => "Back", ShowMain, null));
+            m_Windows.Add(MakeBtn(new Vector2(40 + bw, by), new Vector2(bw, 80), () => "Refresh", RefreshWindows, null));
+            m_Windows.Add(MakeBtn(new Vector2(60 + 2 * bw, by), new Vector2(bw, 80), () => (m_WindowPage + 1) * WindowsPerPage < m_WindowList.Count ? "More >" : "Monitor 0", () =>
+            {
+                if ((m_WindowPage + 1) * WindowsPerPage < m_WindowList.Count) { m_WindowPage++; m_RebuildWindows = true; }
+                else { OnPickMonitor?.Invoke(0); ShowMain(); }
+            }, null));
+        }
+
+        static string Short(string s, int n) => s.Length <= n ? s : s.Substring(0, n - 1) + "…";
+
+        // ------------------------------------------------------------------ building blocks
 
         Image Img(string name, RectTransform parent, Vector2 pos, Vector2 size, Color c) => Img(name, parent, pos, size, c, out _);
 
@@ -108,16 +187,19 @@ namespace XrSpatial.App
         public void SetVisible(bool v) { Visible = v; gameObject.SetActive(v); }
         public void Toggle() => SetVisible(!Visible);
 
+        // ------------------------------------------------------------------ frame
+
         void LateUpdate()
         {
             if (!Visible) return;
             Place();
-            string mode = Tool.Mode == ToolMode.Place ? $"PLACE: point {Tool.PlacedCount + 1} of 4" : Tool.Mode == ToolMode.Crop ? "CROP: drag a box on a screen" : Tool.InteractMode ? "INTERACT" : "EDIT";
+            if (m_Page == Page.Windows && m_RebuildWindows) BuildWindowButtons();
+            string mode = m_Page == Page.Windows ? "CHOOSE A WINDOW TO CAPTURE" : Tool.Mode == ToolMode.Place ? $"PLACE: point {Tool.PlacedCount + 1} of 4" : Tool.Mode == ToolMode.Crop ? "CROP: drag a box on a screen" : Tool.InteractMode ? "INTERACT" : "EDIT";
             var src = Workspace.GetSource(Workspace.ActiveSourceId);
             var def = Workspace.Layout.FindSource(Workspace.ActiveSourceId);
-            string srcLine = def != null ? $"{(string.IsNullOrEmpty(def.label) ? def.id : def.label)}: {src?.Status}" : "no source";
+            string srcLine = def != null ? $"{(string.IsNullOrEmpty(def.label) ? def.id : def.label)}: {src?.Status}" : "no source: choose a window";
             m_Status.text = $"{mode}\n{srcLine}\n{Tool.Message}";
-            foreach (var b in m_Buttons)
+            foreach (var b in Current)
             {
                 b.label.text = b.text();
                 bool act = b.active != null && b.active();
@@ -143,9 +225,7 @@ namespace XrSpatial.App
                 var toHead = head.position - transform.position;
                 transform.rotation = Quaternion.LookRotation(-toHead.normalized, Vector3.up);
             }
-
         }
-        bool m_Placed;
 
         public bool HandlePointer(in PointerState s, out float hitDistance)
         {
@@ -156,12 +236,11 @@ namespace XrSpatial.App
             var plane = new Plane(transform.forward * -1f, transform.position);
             if (!plane.Raycast(s.ray, out float d) || d <= 0f || d > 3f) return false;
             Vector3 world = s.ray.origin + s.ray.direction * d;
-            Vector3 local = transform.InverseTransformPoint(world) / Scale;           // canvas units, origin at the rect pivot
-            // The rect's pivot is centred by default for a Canvas root; shift to bottom-left space.
+            Vector3 local = transform.InverseTransformPoint(world) / Scale;           // canvas units, origin at the rect centre (default pivot)
             Vector2 p = new Vector2(local.x + m_Rect.pivot.x * W, local.y + m_Rect.pivot.y * H);
             if (p.x < -20 || p.x > W + 20 || p.y < -20 || p.y > H + 20) return false;
             hitDistance = d;
-            foreach (var b in m_Buttons)
+            foreach (var b in Current)
             {
                 var r = new Rect(b.rect.anchoredPosition, b.rect.sizeDelta);
                 if (r.Contains(p)) { m_Hover = b; break; }

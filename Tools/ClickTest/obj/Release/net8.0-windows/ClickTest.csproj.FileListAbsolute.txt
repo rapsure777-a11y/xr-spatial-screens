@@ -1,0 +1,15 @@
+C:\Users\fence\Projects\XrSpatialScreens\Tools\ClickTest\bin\Release\net8.0-windows\ClickTest.exe
+C:\Users\fence\Projects\XrSpatialScreens\Tools\ClickTest\bin\Release\net8.0-windows\ClickTest.deps.json
+C:\Users\fence\Projects\XrSpatialScreens\Tools\ClickTest\bin\Release\net8.0-windows\ClickTest.runtimeconfig.json
+C:\Users\fence\Projects\XrSpatialScreens\Tools\ClickTest\bin\Release\net8.0-windows\ClickTest.dll
+C:\Users\fence\Projects\XrSpatialScreens\Tools\ClickTest\bin\Release\net8.0-windows\ClickTest.pdb
+C:\Users\fence\Projects\XrSpatialScreens\Tools\ClickTest\obj\Release\net8.0-windows\ClickTest.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\fence\Projects\XrSpatialScreens\Tools\ClickTest\obj\Release\net8.0-windows\ClickTest.AssemblyInfoInputs.cache
+C:\Users\fence\Projects\XrSpatialScreens\Tools\ClickTest\obj\Release\net8.0-windows\ClickTest.AssemblyInfo.cs
+C:\Users\fence\Projects\XrSpatialScreens\Tools\ClickTest\obj\Release\net8.0-windows\ClickTest.csproj.CoreCompileInputs.cache
+C:\Users\fence\Projects\XrSpatialScreens\Tools\ClickTest\obj\Release\net8.0-windows\ClickTest.sourcelink.json
+C:\Users\fence\Projects\XrSpatialScreens\Tools\ClickTest\obj\Release\net8.0-windows\ClickTest.dll
+C:\Users\fence\Projects\XrSpatialScreens\Tools\ClickTest\obj\Release\net8.0-windows\refint\ClickTest.dll
+C:\Users\fence\Projects\XrSpatialScreens\Tools\ClickTest\obj\Release\net8.0-windows\ClickTest.pdb
+C:\Users\fence\Projects\XrSpatialScreens\Tools\ClickTest\obj\Release\net8.0-windows\ClickTest.genruntimeconfig.cache
+C:\Users\fence\Projects\XrSpatialScreens\Tools\ClickTest\obj\Release\net8.0-windows\ref\ClickTest.dll

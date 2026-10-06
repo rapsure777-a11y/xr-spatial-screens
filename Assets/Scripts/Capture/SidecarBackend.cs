@@ -134,15 +134,22 @@ namespace XrSpatial.Capture
         [DllImport("kernel32.dll")] static extern bool UnmapViewOfFile(IntPtr p);
         [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
 
-        void DrainStatus()
+        void ReadLines()
         {
             while (m_Lines.TryDequeue(out var line))
             {
                 if (line.Contains("\"event\":\"error\"")) { int i = line.IndexOf("\"msg\":", StringComparison.Ordinal); m_LastError = i >= 0 ? line.Substring(i + 6).Trim('}', '"', ' ') : line; m_Status = "capture error: " + m_LastError; }
                 else if (line.Contains("\"event\":\"closed\"")) { m_Ended = true; m_Status = "the captured window was closed"; }
             }
+        }
+
+        void DrainStatus()
+        {
+            ReadLines();
             if (m_Proc != null && m_Proc.HasExited && !m_Ended)
             {
+                // The helper prints its error and exits straight away: give the reader threads a moment to deliver that last line before reporting the exit.
+                if (string.IsNullOrEmpty(m_LastError)) { Thread.Sleep(80); ReadLines(); }
                 m_Ended = true;
                 if (string.IsNullOrEmpty(m_LastError)) m_Status = "capture helper exited (code " + m_Proc.ExitCode + ")";
             }

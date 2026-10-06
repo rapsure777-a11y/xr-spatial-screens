@@ -19,7 +19,7 @@ namespace XrSpatial.App
     /// panel and input forwarding. Chooses VR controllers when a headset is active and the simulated desktop pointer otherwise.
     /// Command line: --xrss-pattern | --xrss-process NAME [--xrss-title TEXT] | --xrss-monitor N | --xrss-layout KEY | --xrss-desktop | --xrss-quickscreen | --xrss-shot FILE
     /// </summary>
-    public sealed class SpatialApp : MonoBehaviour
+    public sealed partial class SpatialApp : MonoBehaviour
     {
         [Serializable]
         public class Options
@@ -74,6 +74,7 @@ namespace XrSpatial.App
         void Start()
         {
             XrActive = !Settings.forceDesktop && XRSettings.isDeviceActive && XRGeneralSettings.Instance != null && XRGeneralSettings.Instance.Manager.activeLoader != null;
+            if (XrActive) SetFloorTracking();
             BuildWorld();
             ApplyCommandLine();
         }
@@ -83,6 +84,18 @@ namespace XrSpatial.App
         {
             var m = XRGeneralSettings.Instance != null ? XRGeneralSettings.Instance.Manager : null;
             if (m != null && m.isInitializationComplete) { m.StopSubsystems(); m.DeinitializeLoader(); }
+        }
+
+        /// <summary>Floor-relative tracking: y = 0 is the floor, so saved layouts keep their height across sessions (falls back to the device origin if the runtime refuses).</summary>
+        void SetFloorTracking()
+        {
+            var subs = new List<XRInputSubsystem>();
+            SubsystemManager.GetSubsystems(subs);
+            foreach (var s in subs)
+            {
+                if (s.TrySetTrackingOriginMode(TrackingOriginModeFlags.Floor)) continue;
+                Debug.Log("[XrSpatial] floor tracking origin not available; using the device origin (layouts are head-relative)");
+            }
         }
 
         // ------------------------------------------------------------------ rig
@@ -119,6 +132,8 @@ namespace XrSpatial.App
 
             Palette = PalettePanel.Create(XrOrigin, Tool, Workspace, Pointer);
             Palette.OnAddPattern = () => AddPattern();
+            Palette.OnPickWindow = w => UseWindow(w);
+            Palette.OnPickMonitor = i => AddMonitor(i);
             Tool.Ui = Palette;
             Forwarder = new GameObject("InputForwarder").AddComponent<InputForwarder>();
             Forwarder.transform.SetParent(XrOrigin, false);
@@ -253,6 +268,12 @@ namespace XrSpatial.App
                 DemoLayout.Build(Workspace, src.id, 1920f / 1080f, XrOrigin.InverseTransformPoint(Cam.transform.position));
             }
             if (Has("--xrss-quickscreen")) { m_QuickPending = true; m_QuickDeadline = Time.realtimeSinceStartup + 8f; }
+            if (Arg("--xrss-selftest-click") is string stc)
+            {
+                var parts = stc.Split(',');
+                if (parts.Length == 2 && float.TryParse(parts[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float tsx) && float.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float tsy))
+                { m_QuickPending = true; m_QuickDeadline = Time.realtimeSinceStartup + 10f; StartCoroutine(SelfTestClick(tsx, tsy)); }
+            }
             m_ShotPath = Arg("--xrss-shot");
             if (Arg("--xrss-shot-delay") is string sf && float.TryParse(sf, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float n)) m_ShotDelay = n;
         }

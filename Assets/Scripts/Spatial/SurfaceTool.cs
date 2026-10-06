@@ -39,6 +39,8 @@ namespace XrSpatial.Spatial
         public float PlaceDistance = 1.6f;
         public float CornerPickRadius = 0.045f;
         public float MinCornerDistance = 0.03f;
+        /// <summary>New screens drawn as a roughly rectangular quad are fitted to the picture's aspect ratio (shrunk inside the drawn area) so the picture is not stretched; deliberate trapezoids are left as drawn.</summary>
+        public bool AutoFitAspect = true;
 
         readonly List<Vector3> m_Placed = new List<Vector3>();
         float m_MessageUntil;
@@ -157,6 +159,18 @@ namespace XrSpatial.Spatial
             Say("Picture turned a quarter", 2f);
         }
 
+        /// <summary>Reshapes the selected screen into a rectangle with its picture's true aspect ratio (shrinking inside the current extents).</summary>
+        public void FitSelectedAspect()
+        {
+            if (!Selected) { Say("Select a screen first"); return; }
+            var src = Selected.Source;
+            if (src == null || !src.HasFrame) { Say("No picture yet to measure"); return; }
+            float aspect = Selected.Def.crop.width * src.Aspect / Mathf.Max(0.001f, Selected.Def.crop.height);
+            Selected.Def.corners = QuadMath.FitAspect(Selected.Def.corners, aspect);
+            Workspace.Touch(Selected);
+            Say("Fitted to the picture's shape", 2f);
+        }
+
         public void ResetSelectedCrop()
         {
             if (!Selected) return;
@@ -169,6 +183,8 @@ namespace XrSpatial.Spatial
         {
             var q = QuadMath.Planarise(QuadMath.OrderForViewer(points, viewer));
             if (!QuadMath.IsValidQuad(q, MinCornerDistance)) { Say("Those four points do not make a flat, convex screen. Try again."); return null; }
+            var live = Workspace.GetSource(sourceId ?? Workspace.ActiveSourceId);
+            if (AutoFitAspect && live != null && live.HasFrame && QuadMath.IsNearParallelogram(q)) q = QuadMath.FitAspect(q, live.Aspect);
             var p = Workspace.AddSurface(sourceId ?? Workspace.ActiveSourceId, q);
             Select(p);
             return p;

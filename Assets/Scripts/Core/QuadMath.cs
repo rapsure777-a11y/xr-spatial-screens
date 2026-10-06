@@ -282,6 +282,34 @@ namespace XrSpatial.Core
             return new[] { centre - hr + hu, centre + hr + hu, centre + hr - hu, centre - hr - hu };
         }
 
+        /// <summary>True when opposite edges are about the same length and parallel enough that the quad is a (skewed) rectangle rather than a deliberate trapezoid.</summary>
+        public static bool IsNearParallelogram(IList<Vector3> q, float tolerance = 0.18f)
+        {
+            float top = (q[TR] - q[TL]).magnitude, bottom = (q[BR] - q[BL]).magnitude, left = (q[BL] - q[TL]).magnitude, right = (q[BR] - q[TR]).magnitude;
+            if (Mathf.Abs(top - bottom) / Mathf.Max(top, bottom) > tolerance || Mathf.Abs(left - right) / Mathf.Max(left, right) > tolerance) return false;
+            return Vector3.Angle(q[TR] - q[TL], q[BR] - q[BL]) < 12f && Vector3.Angle(q[BL] - q[TL], q[BR] - q[TR]) < 12f;
+        }
+
+        /// <summary>
+        /// Turns a quad into a rectangle of the given picture aspect (width / height) in its own plane, about its centroid, keeping its orientation. With
+        /// <paramref name="shrink"/> the result lies inside the original extents (the longer dimension is reduced); otherwise it grows the shorter one.
+        /// </summary>
+        public static Vector3[] FitAspect(IList<Vector3> q, float aspect, bool shrink = true)
+        {
+            aspect = Mathf.Max(0.05f, aspect);
+            var c = Centroid(q);
+            Vector3 r = ((q[TR] - q[TL]) + (q[BR] - q[BL])).normalized;
+            Vector3 n = FrontNormal(q);
+            Vector3 up = Vector3.Cross(n, r);                                    // Unity is left-handed: with n toward the viewer, n x right is the screen's up
+            if (Vector3.Dot(up, (q[TL] - q[BL]) + (q[TR] - q[BR])) < 0f) up = -up;
+            up = up.normalized;
+            var size = Size(q);
+            float w = size.x, h = size.y;
+            if (shrink) { if (w / h > aspect) w = h * aspect; else h = w / aspect; }
+            else { if (w / h > aspect) h = w / aspect; else w = h * aspect; }
+            return RectAt(c, r, up, w, h);
+        }
+
         /// <summary>Width and height of the quad as the average of opposite edges (for aspect-ratio hints and handle sizes).</summary>
         public static Vector2 Size(IList<Vector3> q)
         {

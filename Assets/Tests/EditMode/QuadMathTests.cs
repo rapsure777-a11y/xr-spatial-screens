@@ -209,3 +209,51 @@ namespace XrSpatial.Tests
         }
     }
 }
+
+namespace XrSpatial.Tests
+{
+    public class AspectTests
+    {
+        static UnityEngine.Vector3[] Skewed() => new[]
+        {
+            new UnityEngine.Vector3(-1f, 1.1f, 2f), new UnityEngine.Vector3(1f, 1.0f, 2f), new UnityEngine.Vector3(1.02f, -0.5f, 2f), new UnityEngine.Vector3(-1.02f, -0.45f, 2f),
+        };
+
+        [NUnit.Framework.Test]
+        public void FitAspect_MakesARectangleOfTheRequestedShape_InsideTheOriginal_FacingTheSameWay()
+        {
+            var q = Skewed();
+            NUnit.Framework.Assert.IsTrue(XrSpatial.Core.QuadMath.IsNearParallelogram(q));
+            var f = XrSpatial.Core.QuadMath.FitAspect(q, 16f / 9f);
+            var s = XrSpatial.Core.QuadMath.Size(f);
+            NUnit.Framework.Assert.AreEqual(16f / 9f, s.x / s.y, 1e-3f);
+            var os = XrSpatial.Core.QuadMath.Size(q);
+            NUnit.Framework.Assert.LessOrEqual(s.x, os.x + 1e-3f); NUnit.Framework.Assert.LessOrEqual(s.y, os.y + 1e-3f);
+            NUnit.Framework.Assert.IsTrue(XrSpatial.Core.QuadMath.IsValidQuad(f));
+            var viewer = UnityEngine.Vector3.zero;
+            NUnit.Framework.Assert.IsTrue(XrSpatial.Core.QuadMath.IsClockwiseFrom(f, viewer), "still faces the viewer, not mirrored");
+            NUnit.Framework.Assert.Less(UnityEngine.Vector3.Distance(XrSpatial.Core.QuadMath.Centroid(f), XrSpatial.Core.QuadMath.Centroid(q)), 1e-4f);
+            // Top edge stays on top.
+            NUnit.Framework.Assert.Greater(f[0].y, f[3].y);
+        }
+
+        [NUnit.Framework.Test]
+        public void FitAspect_WorksOnATiltedScreen_AndGrowMode_KeepsTheLargerSize()
+        {
+            var tilt = UnityEngine.Matrix4x4.TRS(new UnityEngine.Vector3(0.5f, 0.8f, 1.2f), UnityEngine.Quaternion.Euler(-70f, 20f, 0f), UnityEngine.Vector3.one);
+            var q = XrSpatial.Core.QuadMath.Transform(new[] { new UnityEngine.Vector3(-1, 0.4f, 0), new UnityEngine.Vector3(1, 0.4f, 0), new UnityEngine.Vector3(1, -0.4f, 0), new UnityEngine.Vector3(-1, -0.4f, 0) }, tilt);
+            var f = XrSpatial.Core.QuadMath.FitAspect(q, 1f, false);
+            var s = XrSpatial.Core.QuadMath.Size(f);
+            NUnit.Framework.Assert.AreEqual(1f, s.x / s.y, 1e-3f);
+            NUnit.Framework.Assert.AreEqual(2f, s.x, 1e-3f, "grow mode keeps the longer dimension");
+            NUnit.Framework.Assert.Less(XrSpatial.Core.QuadMath.NonPlanarity(f), 1e-4f);
+        }
+
+        [NUnit.Framework.Test]
+        public void IsNearParallelogram_RejectsADeliberateTrapezoid()
+        {
+            var t = new[] { new UnityEngine.Vector3(-0.4f, 1f, 2f), new UnityEngine.Vector3(0.4f, 1f, 2f), new UnityEngine.Vector3(1f, -1f, 2f), new UnityEngine.Vector3(-1f, -1f, 2f) };
+            NUnit.Framework.Assert.IsFalse(XrSpatial.Core.QuadMath.IsNearParallelogram(t));
+        }
+    }
+}

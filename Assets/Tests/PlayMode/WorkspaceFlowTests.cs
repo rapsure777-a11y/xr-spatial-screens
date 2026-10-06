@@ -42,6 +42,7 @@ namespace XrSpatial.Tests
             m_Ptr = new ScriptedPointer { HeadTransform = m_App.Cam.transform };
             m_App.Tool.Pointer = m_Ptr;
             m_App.Tool.Ui = null;                                  // the palette is not under test here
+            m_App.Tool.AutoFitAspect = false;                      // exact-corner tests below; auto-fit has its own test
             m_App.Workspace.AutoSave = false;
             m_App.AddPattern();
             yield return null;
@@ -187,6 +188,26 @@ namespace XrSpatial.Tests
             Assert.AreEqual(0.1f, crop.crop.yMin, 0.03f); Assert.AreEqual(0.3f, crop.crop.yMax, 0.03f);
             Assert.AreNotSame(panel, tool.Selected);
             Assert.AreEqual(1, m_App.Workspace.Layout.sources.Count, "still one source feeding two panels");
+        }
+
+        [UnityTest]
+        public IEnumerator AutoFit_ShapesARoughRectangleToThePicturesAspect_AndLeavesTrapezoidsAlone()
+        {
+            var tool = m_App.Tool;
+            tool.AutoFitAspect = true;
+            for (int i = 0; i < 40 && !(m_App.Workspace.GetSource(m_App.Workspace.ActiveSourceId)?.HasFrame ?? false); i++) yield return null;
+            var rect = tool.CreateFromPoints(FourPoints(Head, 1.6f), Head);
+            var s = QuadMath.Size(rect.Def.corners);
+            Assert.AreEqual(16f / 9f, s.x / s.y, 0.01f, "a roughly rectangular drawing is fitted to the picture's 16:9");
+            var trap = new[] { Head + new Vector3(-0.3f, 0.5f, 1.6f), Head + new Vector3(0.3f, 0.5f, 1.6f), Head + new Vector3(0.9f, -0.5f, 1.6f), Head + new Vector3(-0.9f, -0.5f, 1.6f) };
+            var t = tool.CreateFromPoints(trap, Head);
+            Assert.AreEqual(0f, Vector3.Distance(t.Def.corners[QuadMath.TR], trap[1]), 0.02f, "a deliberate trapezoid is kept exactly as drawn");
+            tool.Select(rect);
+            rect.Def.corners = QuadMath.Scale(rect.Def.corners, 1f);
+            rect.Def.corners = QuadMath.RectAt(QuadMath.Centroid(rect.Def.corners), Vector3.right, Vector3.up, 1.0f, 1.0f);
+            tool.FitSelectedAspect();
+            var s2 = QuadMath.Size(rect.Def.corners);
+            Assert.AreEqual(16f / 9f, s2.x / s2.y, 0.01f, "the palette's Fit picture button restores the true shape");
         }
 
         [UnityTest]
