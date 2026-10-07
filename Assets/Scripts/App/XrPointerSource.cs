@@ -73,6 +73,27 @@ namespace XrSpatial.App
             return root;
         }
 
+        float m_NextDiag;
+
+        /// <summary>Every 3 s, writes what the controllers are doing to the player log, so a headset session can be diagnosed afterwards without being in the headset.</summary>
+        void Update()
+        {
+            if (Time.unscaledTime < m_NextDiag) return;
+            m_NextDiag = Time.unscaledTime + 3f;
+            var sb = new System.Text.StringBuilder("[XrSpatial] xr-input:");
+            foreach (var d in InputSystem.devices)
+                if (d is UnityEngine.InputSystem.XR.XRController || d is UnityEngine.InputSystem.XR.XRHMD) sb.Append($" device={d.layout}/{d.name}");
+            Diag(sb, "L", m_Left, LeftHand); Diag(sb, "R", m_Right, RightHand);
+            Debug.Log(sb.ToString());
+        }
+
+        static string Path(InputAction a) => a.controls.Count > 0 ? a.controls[0].path.Replace("/XRController", "") : "none";
+
+        static void Diag(System.Text.StringBuilder sb, string tag, HandInput h, Transform t)
+        {
+            sb.Append($" | {tag}: tracked={(t && t.gameObject.activeSelf)} aim={Path(h.aimPosition)} pose={Path(h.position)} trigger={Path(h.trigger)}={h.trigger.ReadValue<float>():0.00} grip={Path(h.grip)}={h.grip.ReadValue<float>():0.00} primary={Path(h.primary)} menu={Path(h.menu)} stick={Path(h.stick)} pos={(t ? t.localPosition : Vector3.zero):0.00}");
+        }
+
         void OnEnable() { m_Left.Enable(); m_Right.Enable(); Application.onBeforeRender += UpdatePoses; }
         void OnDisable() { m_Left.Disable(); m_Right.Disable(); Application.onBeforeRender -= UpdatePoses; }
         void OnDestroy() { m_Left?.Dispose(); m_Right?.Dispose(); }
