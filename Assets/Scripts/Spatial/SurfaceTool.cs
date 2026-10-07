@@ -203,6 +203,7 @@ namespace XrSpatial.Spatial
             if (Pointer == null || Workspace == null) return;
             m_State = Pointer.Poll();
             var s = m_State;
+            InteractLive = false; InteractPanel = null; InteractTracking = s.valid; InteractState = s;       // the forwarder sees fresh state every frame, never a stale hover
             if (!s.valid) { m_Laser.enabled = false; m_Reticle.gameObject.SetActive(false); return; }
             m_Laser.enabled = true; m_Reticle.gameObject.SetActive(true);
 
@@ -336,9 +337,14 @@ namespace XrSpatial.Spatial
         public PanelView InteractPanel { get; private set; }
         public Vector2 InteractUv { get; private set; }
         public PointerState InteractState { get; private set; }
+        /// <summary>The pointer is tracked this frame (a lost controller is not).</summary>
+        public bool InteractTracking { get; private set; }
+        /// <summary>The pointer is tracked and in the scene (not over the palette) this frame, so InteractPanel/InteractUv are current.</summary>
+        public bool InteractLive { get; private set; }
 
         void UpdateInteract(PointerState s, PanelView hover, Vector2 uv)
         {
+            InteractLive = true;
             InteractPanel = hover && hover.Def.interactive && hover.Source != null ? hover : null;
             InteractUv = uv; InteractState = s;
             if (s.gripDown && hover) { InteractMode = false; Select(hover); StateChanged?.Invoke(); }
