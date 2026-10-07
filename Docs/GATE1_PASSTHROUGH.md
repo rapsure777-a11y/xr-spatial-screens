@@ -40,3 +40,14 @@ Route B, SteamOS Devkit Client (Valve's documented route, use if A does not give
 ## Known risks in this build
 - The manifest has no Frame-specific VR category or Valve OpenXR package yet (Steamworks recommends Valve's OpenXR utilities package for Unity; its page could not be read from here). If the app shows as a flat window, that is the first thing to add.
 - Controllers are not used.
+
+## Run 1 (2026-10-07, device log; visual result pending the user's report)
+Route that worked: Lepton Development started on the Frame, then adb over **IPv4** (`adb connect 10.0.0.171:5555`; the `frame` hostname resolved to an IPv6 link-local address and was refused). `adb install -r` succeeded; `monkey -c LAUNCHER` did not start it, `adb shell am start -n com.gamebreaklabs.gate1passthrough/com.unity3d.player.UnityPlayerGameActivity` did.
+
+Evidence from `adb logcat` (full log saved locally under `Logs/`, not committed):
+- Runtime: `SteamVR/OpenXR 2.17.10` on the headset (the Frame's own OpenXR runtime, not the PC one).
+- **Runtime blend modes on the headset: 1, 3 (opaque and alpha_blend).** The PC runtime offered opaque only.
+- Request accepted: `blend mode changed: AlphaBlend`; Unity reports `displayOpaque=False`.
+- Camera clear SolidColor, alpha 0; head pose tracked live.
+- Extensions enabled by Unity: XR_EXT_local_floor, XR_EXT_user_presence, XR_KHR_android_create_instance, XR_KHR_composition_layer_depth, XR_KHR_visibility_mask, XR_KHR_vulkan_enable2, XR_META_performance_metrics, XR_FB_foveation (+configuration, swapchain_update_state).
+- Early `xrCreateInstance failed` lines appeared twice before the session came up; it then initialised normally.
