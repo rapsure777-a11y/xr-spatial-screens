@@ -41,7 +41,7 @@ Route B, SteamOS Devkit Client (Valve's documented route, use if A does not give
 - The manifest has no Frame-specific VR category or Valve OpenXR package yet (Steamworks recommends Valve's OpenXR utilities package for Unity; its page could not be read from here). If the app shows as a flat window, that is the first thing to add.
 - Controllers are not used.
 
-## Run 1 (2026-10-07, device log; visual result pending the user's report)
+## Run 1 (2026-10-07): GATE 1 PASSED
 Route that worked: Lepton Development started on the Frame, then adb over **IPv4** (`adb connect 10.0.0.171:5555`; the `frame` hostname resolved to an IPv6 link-local address and was refused). `adb install -r` succeeded; `monkey -c LAUNCHER` did not start it, `adb shell am start -n com.gamebreaklabs.gate1passthrough/com.unity3d.player.UnityPlayerGameActivity` did.
 
 Evidence from `adb logcat` (full log saved locally under `Logs/`, not committed):
@@ -51,3 +51,9 @@ Evidence from `adb logcat` (full log saved locally under `Logs/`, not committed)
 - Camera clear SolidColor, alpha 0; head pose tracked live.
 - Extensions enabled by Unity: XR_EXT_local_floor, XR_EXT_user_presence, XR_KHR_android_create_instance, XR_KHR_composition_layer_depth, XR_KHR_visibility_mask, XR_KHR_vulkan_enable2, XR_META_performance_metrics, XR_FB_foveation (+configuration, swapchain_update_state).
 - Early `xrCreateInstance failed` lines appeared twice before the session came up; it then initialised normally.
+
+**User report (headset, Arcturus Vision Camera attached):** the six coloured panels are visible, the real room is visible behind them, in full colour. The text board showed the full extension list, so it overflowed (cosmetic; trim it before reuse).
+
+**Conclusion: Gate 1 passed.** A native Android/OpenXR Unity app on the Steam Frame gets colour passthrough from the system compositor just by requesting `XR_ENVIRONMENT_BLEND_MODE_ALPHA_BLEND` (Unity public API, no camera code, no Valve package, no extra manifest entries) with a transparent-black clear and opaque panels. The Arcturus feed is handled by the Frame, not by the app. Not yet known: behaviour with the camera unplugged (the Frame's own cameras may give a different picture), frame rate/latency under load, and whether a streamed window texture keeps alpha correctly.
+
+Classification: not an app bug, not an OpenXR/runtime limitation (the Frame runtime offers blend mode 3), not an Arcturus limitation.
