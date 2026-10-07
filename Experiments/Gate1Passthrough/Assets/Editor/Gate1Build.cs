@@ -54,11 +54,29 @@ namespace Gate1
 
             foreach (var group in new[] { BuildTargetGroup.Android, BuildTargetGroup.Standalone })
             {
-                var perTarget = XRGeneralSettingsPerBuildTarget.GetOrCreate(); // ensures the container asset exists
-                perTarget.CreateDefaultSettingsForBuildTarget(group);
+                EditorBuildSettings.TryGetConfigObject(XRGeneralSettings.settingsKey, out XRGeneralSettingsPerBuildTarget perTarget);
+                if (!perTarget)
+                {
+                    Directory.CreateDirectory("Assets/XR");
+                    perTarget = ScriptableObject.CreateInstance<XRGeneralSettingsPerBuildTarget>();
+                    AssetDatabase.CreateAsset(perTarget, "Assets/XR/XRGeneralSettingsPerBuildTarget.asset");
+                    EditorBuildSettings.AddConfigObject(XRGeneralSettings.settingsKey, perTarget, true);
+                }
                 var settings = perTarget.SettingsForBuildTarget(group);
-                if (settings == null) { Debug.LogError("[Gate1] no XR settings for " + group); continue; }
-                if (settings.Manager == null) settings.CreateDefaultManagerSettings();
+                if (!settings)
+                {
+                    settings = ScriptableObject.CreateInstance<XRGeneralSettings>();
+                    settings.name = group + " Settings";
+                    perTarget.SetSettingsForBuildTarget(group, settings);
+                    AssetDatabase.AddObjectToAsset(settings, perTarget);
+                }
+                if (!settings.Manager)
+                {
+                    var manager = ScriptableObject.CreateInstance<XRManagerSettings>();
+                    manager.name = group + " Providers";
+                    AssetDatabase.AddObjectToAsset(manager, perTarget);
+                    settings.Manager = manager;
+                }
                 settings.InitManagerOnStart = true;
                 bool ok = XRPackageMetadataStore.AssignLoader(settings.Manager, "UnityEngine.XR.OpenXR.OpenXRLoader", group);
                 Debug.Log($"[Gate1] OpenXR loader assigned for {group}: {ok}");
@@ -81,6 +99,10 @@ namespace Gate1
         public static void BuildAndroid()
         {
             Directory.CreateDirectory("Builds");
+            // tools unpacked from the Unity Hub download cache into a user folder (no admin rights needed)
+            UnityEditor.Android.AndroidExternalToolsSettings.sdkRootPath = @"C:\Users\fence\UnityAndroid\SDK";
+            UnityEditor.Android.AndroidExternalToolsSettings.ndkRootPath = @"C:\Users\fence\UnityAndroid\NDK\android-ndk-r27c";
+            UnityEditor.Android.AndroidExternalToolsSettings.jdkRootPath = @"C:\Users\fence\UnityAndroid\OpenJDK";
             EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Android, BuildTarget.Android);
             EditorUserBuildSettings.buildAppBundle = false;
             var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions { scenes = new[] { ScenePath }, locationPathName = ApkPath, target = BuildTarget.Android, options = BuildOptions.None });
