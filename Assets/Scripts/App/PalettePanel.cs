@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
@@ -153,7 +153,7 @@ namespace XrSpatial.App
             }, null));
         }
 
-        static string Short(string s, int n) => s.Length <= n ? s : s.Substring(0, n - 1) + "…";
+        static string Short(string s, int n) => s.Length <= n ? s : s.Substring(0, n - 1) + "â€¦";
 
         // ------------------------------------------------------------------ building blocks
 
@@ -227,6 +227,14 @@ namespace XrSpatial.App
             }
         }
 
+        /// <summary>World position of the centre of the first button on the current page whose label starts with <paramref name="labelStart"/> (tests and diagnostics).</summary>
+        public bool TryGetButtonWorldCenter(string labelStart, out Vector3 world)
+        {
+            foreach (var b in Current)
+                if (b.text().StartsWith(labelStart, StringComparison.OrdinalIgnoreCase)) { world = b.rect.TransformPoint(b.rect.rect.center); return true; }
+            world = default; return false;
+        }
+
         public bool HandlePointer(in PointerState s, out float hitDistance)
         {
             hitDistance = 0f;
@@ -236,7 +244,7 @@ namespace XrSpatial.App
             var plane = new Plane(transform.forward * -1f, transform.position);
             if (!plane.Raycast(s.ray, out float d) || d <= 0f || d > 3f) return false;
             Vector3 world = s.ray.origin + s.ray.direction * d;
-            Vector3 local = transform.InverseTransformPoint(world) / Scale;           // canvas units, origin at the rect centre (default pivot)
+            Vector3 local = transform.InverseTransformPoint(world);           // already in canvas units: the canvas scale is part of this transform. Origin at the rect centre (default pivot)
             Vector2 p = new Vector2(local.x + m_Rect.pivot.x * W, local.y + m_Rect.pivot.y * H);
             if (p.x < -20 || p.x > W + 20 || p.y < -20 || p.y > H + 20) return false;
             hitDistance = d;
