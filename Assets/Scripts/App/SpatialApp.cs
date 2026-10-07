@@ -155,7 +155,7 @@ namespace XrSpatial.App
             {
                 // Hook for MR: an OpenXR environment blend mode / passthrough layer. The render path already uses a transparent clear colour and opaque panels, so
                 // enabling the runtime's passthrough later requires no change to panels. Not implemented (Steam Frame passthrough APIs are deliberately not a dependency).
-                Debug.Log("[XrSpatial] Passthrough background requested: not implemented yet, using the void.");
+                Debug.Log("[XrSpatial] Passthrough background requested: not available to a streamed PC OpenXR app on this runtime (blend mode list is opaque only), using the void. See Docs/PASSTHROUGH.md.");
                 return;
             }
             if (mode == BackgroundMode.Grid) m_Grid = BuildGrid();

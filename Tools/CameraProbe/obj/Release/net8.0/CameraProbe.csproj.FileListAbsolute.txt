@@ -1,0 +1,15 @@
+C:\Users\fence\Projects\XrSpatialScreens\Tools\CameraProbe\obj\Release\net8.0\CameraProbe.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\fence\Projects\XrSpatialScreens\Tools\CameraProbe\obj\Release\net8.0\CameraProbe.AssemblyInfoInputs.cache
+C:\Users\fence\Projects\XrSpatialScreens\Tools\CameraProbe\obj\Release\net8.0\CameraProbe.AssemblyInfo.cs
+C:\Users\fence\Projects\XrSpatialScreens\Tools\CameraProbe\obj\Release\net8.0\CameraProbe.csproj.CoreCompileInputs.cache
+C:\Users\fence\Projects\XrSpatialScreens\Tools\CameraProbe\obj\Release\net8.0\CameraProbe.sourcelink.json
+C:\Users\fence\Projects\XrSpatialScreens\Tools\CameraProbe\bin\Release\net8.0\CameraProbe.exe
+C:\Users\fence\Projects\XrSpatialScreens\Tools\CameraProbe\bin\Release\net8.0\CameraProbe.deps.json
+C:\Users\fence\Projects\XrSpatialScreens\Tools\CameraProbe\bin\Release\net8.0\CameraProbe.runtimeconfig.json
+C:\Users\fence\Projects\XrSpatialScreens\Tools\CameraProbe\bin\Release\net8.0\CameraProbe.dll
+C:\Users\fence\Projects\XrSpatialScreens\Tools\CameraProbe\bin\Release\net8.0\CameraProbe.pdb
+C:\Users\fence\Projects\XrSpatialScreens\Tools\CameraProbe\obj\Release\net8.0\CameraProbe.dll
+C:\Users\fence\Projects\XrSpatialScreens\Tools\CameraProbe\obj\Release\net8.0\refint\CameraProbe.dll
+C:\Users\fence\Projects\XrSpatialScreens\Tools\CameraProbe\obj\Release\net8.0\CameraProbe.pdb
+C:\Users\fence\Projects\XrSpatialScreens\Tools\CameraProbe\obj\Release\net8.0\CameraProbe.genruntimeconfig.cache
+C:\Users\fence\Projects\XrSpatialScreens\Tools\CameraProbe\obj\Release\net8.0\ref\CameraProbe.dll
