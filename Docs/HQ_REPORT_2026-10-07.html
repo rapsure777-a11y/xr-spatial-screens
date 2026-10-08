@@ -1,0 +1,117 @@
+<title>Spatial Crop HQ Report</title>
+<style>
+:root {
+  /* layout: one reading column, status strip first, evidence tables, then decisions */
+  --bg: #f6f7f5; --fg: #1b2420; --muted: #5a6761; --line: #d9dfdb; --card: #ffffff;
+  --accent: #0b7a5a; --good: #12805c; --warn: #a15c00; --bad: #b3261e; --chip: #e5efe9;
+  --display: "Fraunces", Georgia, serif; --body: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121815; --fg: #e6ece8; --muted: #9aa8a1; --line: #2b3630; --card: #19211d;
+  --accent: #4cc9a0; --good: #4cc9a0; --warn: #e0a447; --bad: #f08a80; --chip: #22302a; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #121815; --fg: #e6ece8; --muted: #9aa8a1; --line: #2b3630; --card: #19211d;
+  --accent: #4cc9a0; --good: #4cc9a0; --warn: #e0a447; --bad: #f08a80; --chip: #22302a; color-scheme: dark; }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); line-height: 1.55; padding-inline: 16px; padding-block: 28px 56px; }
+main { max-width: 760px; margin-inline: auto; display: flex; flex-direction: column; gap: 28px; }
+h1, h2 { font-family: var(--display); text-wrap: balance; line-height: 1.15; margin: 0; font-weight: 600; }
+h1 { font-size: 2rem; } h2 { font-size: 1.3rem; }
+p { margin: 0; } ul { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; }
+.meta { color: var(--muted); font-family: var(--mono); font-size: 0.8rem; letter-spacing: 0.02em; }
+section { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.gate { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.gate b { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+.pill { display: inline-block; font-family: var(--mono); font-size: 0.75rem; padding: 2px 8px; border-radius: 99px; width: fit-content; }
+.pill.pass { background: var(--chip); color: var(--good); } .pill.fail { background: var(--chip); color: var(--bad); }
+.pill.next { background: var(--chip); color: var(--warn); }
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; min-width: 480px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; } th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+code { font-family: var(--mono); font-size: 0.85em; background: var(--chip); padding: 1px 5px; border-radius: 4px; }
+.callout { border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=IBM+Plex+Mono&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<main>
+  <header>
+    <p class="meta">XR SPATIAL SCREENS · SPATIAL CROP · 7 OCT 2026</p>
+    <h1>Real-room passthrough works. Streaming works. Interaction is next.</h1>
+  </header>
+
+  <section>
+    <p>The product goal is floating, cropped, clickable PC windows over the user's real room in full colour on the Steam Frame. A PC app streamed through SteamVR cannot get passthrough. A native app on the headset can. Two proofs on the real hardware (Steam Frame, Arcturus Vision Camera attached) now back that up.</p>
+    <div class="strip">
+      <div class="gate"><b>Gate 0</b><span class="pill pass">PC route closed</span><span>PC camera API and overlays give no passthrough.</span></div>
+      <div class="gate"><b>Gate 1</b><span class="pill pass">Passed</span><span>Native app: room in full colour behind panels.</span></div>
+      <div class="gate"><b>Gate 2</b><span class="pill pass">Passed</span><span>PC window streamed into that app, readable.</span></div>
+      <div class="gate"><b>Gate 3</b><span class="pill next">Started</span><span>Controllers, laser, click forwarding.</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What was established</h2>
+    <div class="tablewrap"><table>
+      <tr><th>Question</th><th>Answer</th><th>Evidence</th></tr>
+      <tr><td>Can the current PC OpenXR app show passthrough?</td><td>No</td><td>Streamed runtime lists blend mode opaque only.</td></tr>
+      <tr><td>Can a PC program read the headset camera (OpenVR)?</td><td>No</td><td>Probe with the headset connected: <code>HasCamera = 0</code>, NotSupportedForThisDevice.</td></tr>
+      <tr><td>Do SteamVR overlays (OVR Toolkit) show passthrough?</td><td>No</td><td>Tested by the user on the Frame.</td></tr>
+      <tr><td>Does a native Frame app get colour passthrough?</td><td>Yes</td><td>Headset runtime offers blend modes 1 and 3; request accepted; user saw the room in full colour.</td></tr>
+      <tr><td>Does the camera need app code?</td><td>No</td><td>One Unity OpenXR call, transparent-black clear, opaque panels.</td></tr>
+      <tr><td>Can captured Windows content be streamed in?</td><td>Yes</td><td>Gate 2 measurements below.</td></tr>
+      <tr><td>Frametop (existing Frame desktop project)?</td><td>Not our mechanism</td><td>It draws SteamVR overlays on the headset; its docs never mention passthrough. MIT licence, depends on undocumented SteamVR internals.</td></tr>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Gate 2 measurements</h2>
+    <div class="tablewrap"><table>
+      <tr><th>Metric</th><th>Result</th><th>Target</th></tr>
+      <tr><td>Frame rate on the headset</td><td class="num">~21 fps</td><td class="num">30 (source animation was the limit)</td></tr>
+      <tr><td>Round trip, capture to shown and acknowledged</td><td class="num">22 ms avg, 36 ms max</td><td class="num">&lt; 150 ms</td></tr>
+      <tr><td>PC JPEG encode / headset decode</td><td class="num">~2 ms / ~5 ms</td><td></td></tr>
+      <tr><td>Bandwidth, one 1200×576 window</td><td class="num">~25 Mbit/s</td><td></td></tr>
+      <tr><td>Dropped frames</td><td class="num">1 in ~440</td><td></td></tr>
+    </table></div>
+    <p class="callout">User on the headset: small text readable, animated line smooth, room still visible in colour, looks very good.</p>
+  </section>
+
+  <section>
+    <h2>Architecture</h2>
+    <p>A PC host captures windows (Windows.Graphics.Capture), encodes them and applies input with <code>SendInput</code>. A native Unity/OpenXR client on the headset owns placement, cropping, layouts and the palette, shows each window as a panel, and sends pointer events back. About 80% of the existing C# carries over (math, layouts, placement, cropping, palette, click mapping). The Win32 half of input forwarding stays on the PC where it is already tested.</p>
+  </section>
+
+  <section>
+    <h2>Risks and unknowns</h2>
+    <ul>
+      <li>JPEG at ~25 Mbit/s per window will not scale to several large windows. Production needs hardware H.264/H.265.</li>
+      <li>Only one small window and one source rate were tested. A 3440×1440 window, several windows and a heavy game running together are unmeasured.</li>
+      <li>The stream currently rides an adb tunnel on loopback. A real build needs a LAN connection with a pairing code and encryption.</li>
+      <li>Behaviour with the Arcturus camera unplugged was not tested.</li>
+      <li>Deployment depends on Lepton Development on the Frame and adb over IPv4; the <code>frame</code> hostname resolves to IPv6 and fails. Valve's devkit client or Frameloader are alternatives, not yet tried.</li>
+      <li>Valve documentation for the headset-side tools is thin; some behaviour was found by experiment.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Gate 3 plan, in small steps</h2>
+    <ul>
+      <li><b>3a</b> Frame controllers and a laser pointer in the headset app. One streamed window, click, drag and scroll forwarded to the PC.</li>
+      <li><b>3b</b> Bring in placement, 4-corner editing, cropping and the palette from the PC code base.</li>
+      <li><b>3c</b> Window list from the PC, saved layouts per app.</li>
+      <li><b>3d</b> Pairing code and LAN transport; H.264 when several windows are open.</li>
+    </ul>
+    <p>Each step ends with a short headset check by the user.</p>
+  </section>
+
+  <section>
+    <h2>Where things are</h2>
+    <ul>
+      <li>Repository: <code>rapsure777-a11y/xr-spatial-screens</code> (public). <code>main</code> and <code>develop</code> untouched by this work.</li>
+      <li><code>claude/gate1-passthrough</code> · <code>claude/gate2-streaming</code> (SHA <code>90ab012</code>) · <code>claude/gate3-interaction</code> (started).</li>
+      <li>Docs: <code>Docs/PASSTHROUGH.md</code>, <code>NATIVE_CLIENT_ARCHITECTURE.md</code>, <code>GATE1_PASSTHROUGH.md</code>, <code>GATE2_STREAMING.md</code>.</li>
+      <li>Not merged to <code>develop</code> yet; promotion to <code>main</code> only after a full headset test.</li>
+    </ul>
+  </section>
+</main>
