@@ -23,3 +23,14 @@ Headset result: palette, 4-corner placement, and use in the room worked; the use
 - Transport is loopback + adb. Needs LAN transport with a pairing code and encryption before real use; JPEG does not scale to several large windows (hardware H.264 planned).
 - Mapping/dead-zone/double-click rules live in the PC host (`Tools/XrssStream/InputInjector.cs`), duplicated from `InputForwarder.cs`; the two should be unified later.
 - Controller button names on the headset differ from the PC (Touch layout): right click is the secondary (B) button in the real app.
+
+## Real browser and game windows (2026-10-08)
+Tested with an Edge window (Wikipedia article) and Slay the Spire (3440x1431 window) streamed to the real app. User: game "extremely playable", no ghosting or tearing, clicks and drags work; text "not blurry" after the fixes; sharpness limited mostly by the headset display.
+
+Bugs and causes found:
+- Upside-down image: the capture helper writes rows top-first (what the panel shader expects); a decoded JPEG is bottom-first. Fixed with a GPU flip in `ScreenSource` for `NetworkBackend`.
+- Blur: the stock URP Mobile asset renders at 0.8 scale; the headset build now sets 1.0 and the eye texture scale to 1.25. JPEG quality 90, 4:4:4.
+- Click not working: the palette's Interact toggle must be ON (trigger edits screens otherwise); and the capture helper had died because the game first shows a start-up window whose handle is replaced a few seconds later. Wait for the game window handle to stay stable before capturing.
+- Lag: three causes. (1) JPEG encode ~40 ms on one thread capped the stream near 21 fps: now libjpeg-turbo (SkiaSharp) on 3 parallel workers, ~30 fps. (2) Router Wi-Fi to the Frame had 24 ms average ping and spikes to 149 ms. (3) The Frame is also reachable through its Valve Wi-Fi dongle on the PC (`Realtek 8832CU ... For Valve`, 2.4 Gbps link, Frame address 10.35.78.1): 1 ms average, 6 ms worst. Use `adb connect 10.35.78.1:5555` (not the router address) and the stream runs at ~32 fps with a 35 ms average and 62 ms worst round trip (2400x1016, ~80 Mbit/s).
+
+Not measured: decode time on the headset main thread; full-width (3440) streaming; several windows at once; fast action games; fullscreen exclusive games; the Frame behaviour on battery over a long session.
