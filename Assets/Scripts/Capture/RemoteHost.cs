@@ -66,7 +66,7 @@ namespace XrSpatial.Capture
                 {
                     using var c = new TcpClient { NoDelay = true };
                     c.Connect(Address, Port);
-                    var net = c.GetStream(); s_Net = net; Connected = true; State = "connected";
+                    var net = c.GetStream(); s_Net = net; Connected = true; State = "connected"; ConnectionEpoch++;
                     Debug.Log("[XrSpatial] remote: connected to the PC host");
                     RequestList();
                     SendSound();
@@ -204,6 +204,12 @@ namespace XrSpatial.Capture
             return jpeg != null;
         }
 
+        /// <summary>Puts a frame back as the newest undelivered one (used when a decoder gives up and another one takes over).</summary>
+        public static void Requeue(ushort id, byte[] jpeg, int w, int h, uint seq)
+        {
+            lock (s_Lock) { if (s_Streams.TryGetValue(id, out var s) && s.latest == null) { s.latest = jpeg; s.w = w; s.h = h; s.seq = seq; } }
+        }
+
         public static void Ack(ushort id, uint seq)
         {
             var m = new byte[7]; m[0] = (byte)'A'; BitConverter.GetBytes(id).CopyTo(m, 1); BitConverter.GetBytes(seq).CopyTo(m, 3);
@@ -231,6 +237,16 @@ namespace XrSpatial.Capture
             var m = new byte[8]; m[0] = (byte)'K'; BitConverter.GetBytes(id).CopyTo(m, 1); m[3] = kind; BitConverter.GetBytes(code).CopyTo(m, 4);
             Write(m);
         }
+
+        /// <summary>How wide a picture the headset wants for a stream and at what frame rate (a screen out of view asks for a low rate). Must be resent after a reconnect (<see cref="ConnectionEpoch"/>).</summary>
+        public static void SetStreamQuality(ushort id, int maxWidth, int fps)
+        {
+            var m = new byte[6]; m[0] = (byte)'R'; BitConverter.GetBytes(id).CopyTo(m, 1); BitConverter.GetBytes((ushort)Mathf.Clamp(maxWidth, 320, 7680)).CopyTo(m, 3); m[5] = (byte)Mathf.Clamp(fps, 1, 255);
+            Write(m);
+        }
+
+        /// <summary>Increases every time the connection to the host is (re)established.</summary>
+        public static int ConnectionEpoch { get; private set; }
 
         public static void SendLost(ushort id)
         {
