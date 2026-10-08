@@ -86,8 +86,26 @@ sealed unsafe class StreamState
         Injector = new InputInjector(() => new IntPtr(Hwnd));
     }
 
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool IsWindow(IntPtr h);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
+    bool m_RestoredFromMinimized;
+
+    /// <summary>A minimized window has nothing to capture. Bring it back without taking focus; it is minimized again when the stream closes.</summary>
+    void RestoreIfMinimized()
+    {
+        var h = new IntPtr(Hwnd);
+        if (!IsWindow(h) || !IsIconic(h)) return;
+        ShowWindow(h, 4 /* SW_SHOWNOACTIVATE */);
+        if (IsIconic(h)) ShowWindow(h, 9 /* SW_RESTORE */);
+        m_RestoredFromMinimized = true;
+        Thread.Sleep(350);                                           // let the window draw before the first capture
+        Console.WriteLine($"stream {Id}: window was minimized, restored it");
+    }
+
     public void StartCapture()
     {
+        RestoreIfMinimized();
         var psi = new ProcessStartInfo(Program.CapturePath, $"--run --id {MapName} --hwnd {Hwnd} --fps {Program.Fps}")
         { UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true };
         Capture = Process.Start(psi);
@@ -126,6 +144,7 @@ sealed unsafe class StreamState
     {
         Ended = true;
         Injector.Release("stream closed"); Injector.ReleaseKeys();
+        if (m_RestoredFromMinimized) { var h = new IntPtr(Hwnd); if (IsWindow(h)) ShowWindow(h, 6 /* SW_MINIMIZE */); }       // leave the desktop as it was
         try { if (Capture != null && !Capture.HasExited) { Capture.StandardInput.Close(); if (!Capture.WaitForExit(500)) Capture.Kill(); } } catch { }
         try { if (Base != null) View.SafeMemoryMappedViewHandle.ReleasePointer(); Base = null; View?.Dispose(); Mmf?.Dispose(); } catch { }
     }
