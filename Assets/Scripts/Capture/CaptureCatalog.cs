@@ -27,12 +27,7 @@ namespace XrSpatial.Capture
     {
         public static Task<List<CapturableWindow>> ListAsync(bool includeSelf = false)
         {
-            if (RemoteHost.Active)
-            {
-                // headset build: the PC host currently streams one window; offer it as the only choice
-                var one = new List<CapturableWindow> { new CapturableWindow { hwnd = 0, title = "Streamed PC window", process = "PC", w = RemoteHost.FrameWidth, h = RemoteHost.FrameHeight } };
-                return Task.FromResult(one);
-            }
+            if (RemoteHost.Active) return RemoteHost.ListAsync();          // headset build: the PC host lists its windows
             return Task.Run(() =>
             {
                 var result = new List<CapturableWindow>();

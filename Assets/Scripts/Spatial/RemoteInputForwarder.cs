@@ -6,8 +6,8 @@ namespace XrSpatial.Spatial
 {
     /// <summary>
     /// Headset-side counterpart of <see cref="InputForwarder"/>: while the tool is in interact mode and the laser is on a panel, the laser position on the panel is
-    /// turned into a position on the source image (crop aware, <see cref="PanelView.UvToSource"/>) and sent to the PC host, which maps it onto the real window and injects the
-    /// input with the checks of the Windows forwarder (window to the front, covered-spot refusal, dead zone, double-click snap). The press target is locked while a button is held,
+    /// turned into a position on the source image (crop aware, <see cref="PanelView.UvToSource"/>) and sent to the PC host for that panel's window stream. The host maps it onto the real window and
+    /// injects the input with the checks of the Windows forwarder (window to the front, covered-spot refusal, dead zone, double-click snap). The press target is locked while a button is held,
     /// and everything is released when tracking is lost.
     /// Controls (same as the PC version): trigger = left button (hold to drag), secondary button = right click, stick up/down = wheel.
     /// </summary>
@@ -21,8 +21,18 @@ namespace XrSpatial.Spatial
 
         bool m_Left;
         PanelView m_Target;
+        ushort m_Stream;
         Vector2 m_LastUv, m_LastSent;
         float m_NextWheel;
+
+        static bool TryStream(PanelView panel, out ushort id)
+        {
+            id = 0;
+            if (panel == null || panel.Source == null || panel.Source.Def.kind == "pattern") return false;      // the test pattern is not a real window
+            var nb = panel.Source.Backend as NetworkBackend;
+            if (nb == null || nb.HasEnded || nb.Width <= 0) return false;
+            id = nb.StreamId; return true;
+        }
 
         void Update()
         {
@@ -32,7 +42,8 @@ namespace XrSpatial.Spatial
 
             if (m_Left && (!Tool.InteractTracking || !panel)) { Release("tracking lost"); return; }
             if (!m_Left && (!Tool.InteractLive || !panel)) return;
-            if (panel.Source == null || panel.Source.Def.kind == "pattern") { Release("no window"); return; }   // the test pattern is not a real window
+            if (!TryStream(panel, out ushort stream)) { Release("no window"); return; }
+            if (m_Left && stream != m_Stream) { Release("window changed"); return; }
 
             // Where on the source is the laser? While a button is held the laser may wander off the panel: keep the destination and clamp to its edge.
             Vector2 uv;
@@ -41,19 +52,19 @@ namespace XrSpatial.Spatial
             m_LastUv = uv;
             Vector2 src = panel.UvToSource(uv);
 
-            if (s.triggerDown && !m_Left) { RemoteHost.SendPointer(LeftDown, src.x, src.y, 0); m_Left = true; m_Target = panel; m_LastSent = src; LastAction = "left down"; }
-            else if (m_Left && (s.triggerUp || !s.triggerHeld)) { RemoteHost.SendPointer(LeftUp, src.x, src.y, 0); m_Left = false; m_Target = null; LastAction = "left up"; }
-            else if ((src - m_LastSent).sqrMagnitude > 4e-7f) { RemoteHost.SendPointer(Move, src.x, src.y, 0); m_LastSent = src; }
+            if (s.triggerDown && !m_Left) { RemoteHost.SendPointer(stream, LeftDown, src.x, src.y, 0); m_Left = true; m_Target = panel; m_Stream = stream; m_LastSent = src; LastAction = "left down"; }
+            else if (m_Left && (s.triggerUp || !s.triggerHeld)) { RemoteHost.SendPointer(stream, LeftUp, src.x, src.y, 0); m_Left = false; m_Target = null; LastAction = "left up"; }
+            else if ((src - m_LastSent).sqrMagnitude > 4e-7f) { RemoteHost.SendPointer(stream, Move, src.x, src.y, 0); m_LastSent = src; }
 
-            if (s.secondaryDown && !m_Left) { RemoteHost.SendPointer(RightClick, src.x, src.y, 0); LastAction = "right click"; }
-            if (Mathf.Abs(s.stick.y) > 0.5f && Time.unscaledTime > m_NextWheel && !m_Left) { RemoteHost.SendPointer(Wheel, src.x, src.y, Mathf.Sign(s.stick.y)); m_NextWheel = Time.unscaledTime + 0.08f; LastAction = "wheel"; }
+            if (s.secondaryDown && !m_Left) { RemoteHost.SendPointer(stream, RightClick, src.x, src.y, 0); LastAction = "right click"; }
+            if (Mathf.Abs(s.stick.y) > 0.5f && Time.unscaledTime > m_NextWheel && !m_Left) { RemoteHost.SendPointer(stream, Wheel, src.x, src.y, Mathf.Sign(s.stick.y)); m_NextWheel = Time.unscaledTime + 0.08f; LastAction = "wheel"; }
         }
 
         /// <summary>Lets go of a held button (tracking lost, interaction switched off) so nothing stays pressed on the PC.</summary>
         void Release(string why)
         {
             if (!m_Left) return;
-            RemoteHost.SendLost();
+            RemoteHost.SendLost(m_Stream);
             m_Left = false; m_Target = null; LastAction = "released (" + why + ")";
         }
 

@@ -37,7 +37,12 @@ namespace XrSpatial.Capture
             Backend?.Dispose();
             Backend = null;
             if (Def.kind == "pattern") Backend = new PatternBackend();
-            else if (RemoteHost.Active) Backend = new NetworkBackend();            // headset build: the PC host streams the window
+            else if (RemoteHost.Active)
+            {
+                // headset build: the PC host streams the window; find it by process/title among the PC's windows (retried by Tick while it is not open)
+                var win = Def.kind == "window" ? RemoteHost.Resolve(Def.processName, Def.titleContains) : null;
+                if (win != null) Backend = new NetworkBackend(win.hwnd);
+            }
             else
             {
                 var req = m_Request?.Invoke();
