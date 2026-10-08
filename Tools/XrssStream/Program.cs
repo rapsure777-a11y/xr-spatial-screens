@@ -57,6 +57,7 @@ static class Program
         var sentAt = new long[1 << 12];                         // seq -> Stopwatch ticks when the frame was fully written
         long ackCount = 0, rttTicksSum = 0, rttMaxTicks = 0;
         // Headset -> PC messages: 'A' + seq u32 (frame shown); 'P' + kind u8 + u f32 + v f32 + wheel f32 (pointer event, see InputInjector); 'L' (pointer lost).
+        bool clientGone = false;                                // set when the read side ends, so a silent (static-window) connection is dropped too
         var injector = new InputInjector(() => new IntPtr((long)view.ReadUInt32(OffHwnd)));
         var ackThread = new Thread(() =>
         {
@@ -83,7 +84,7 @@ static class Program
                 }
             }
             catch { }
-            finally { injector.Release("headset disconnected"); }
+            finally { injector.Release("headset disconnected"); clientGone = true; }
         }) { IsBackground = true };
         ackThread.Start();
 
@@ -94,7 +95,7 @@ static class Program
         view.SafeMemoryMappedViewHandle.AcquirePointer(ref basePtr);
         try
         {
-            while (client.Connected)
+            while (client.Connected && !Volatile.Read(ref clientGone))
             {
                 uint counter = *(uint*)(basePtr + OffFrameCounter);
                 long now = Stopwatch.GetTimestamp();

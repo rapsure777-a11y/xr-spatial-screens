@@ -104,7 +104,14 @@ sealed class InputInjector
             case RightClick:
                 if (m_Left) break;
                 if (!BringToFront(hwnd)) { Refusals++; Last = "refused: Windows would not bring the window to the front"; Console.WriteLine(Last); return; }
-                if (!SpotBelongsTo(hwnd, px, py)) { Refusals++; Last = "refused: another window covers that spot"; Console.WriteLine(Last); return; }
+                // z-order can lag a moment behind the foreground change: give the spot a short time to settle before calling it covered
+                for (int i = 0; i < 15 && !SpotBelongsTo(hwnd, px, py); i++) Thread.Sleep(10);
+                if (!SpotBelongsTo(hwnd, px, py))
+                {
+                    var under = WindowFromPoint(new POINT { x = px, y = py });
+                    Refusals++; Last = $"refused: another window covers that spot (pixel {px},{py}; window under it {under} root {Root(under)}; target {hwnd} root {Root(hwnd)}; foreground {GetForegroundWindow()})";
+                    Console.WriteLine(Last); return;
+                }
                 if (kind == LeftDown)
                 {
                     long now = Stopwatch.GetTimestamp();
