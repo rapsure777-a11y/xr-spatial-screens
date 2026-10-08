@@ -34,3 +34,11 @@ Bugs and causes found:
 - Lag: three causes. (1) JPEG encode ~40 ms on one thread capped the stream near 21 fps: now libjpeg-turbo (SkiaSharp) on 3 parallel workers, ~30 fps. (2) Router Wi-Fi to the Frame had 24 ms average ping and spikes to 149 ms. (3) The Frame is also reachable through its Valve Wi-Fi dongle on the PC (`Realtek 8832CU ... For Valve`, 2.4 Gbps link, Frame address 10.35.78.1): 1 ms average, 6 ms worst. Use `adb connect 10.35.78.1:5555` (not the router address) and the stream runs at ~32 fps with a 35 ms average and 62 ms worst round trip (2400x1016, ~80 Mbit/s).
 
 Not measured: decode time on the headset main thread; full-width (3440) streaming; several windows at once; fast action games; fullscreen exclusive games; the Frame behaviour on battery over a long session.
+
+## Several windows at once (3c first slice, 2026-10-08)
+Host protocol v2 (`Tools/XrssStream/Program.cs`): one TCP connection, many streams: window list ('W'/'XRSL'), open/close a stream per window handle ('O'/'X'), per-stream acks and pointer events, stream status messages. One `XrssCapture` helper per open window, shared 4-way JPEG encode pool; idle windows cost almost nothing (a static page streams 1 to 5 fps). Headset: `RemoteHost` (streams, window list, reconnect re-opens wanted streams), `NetworkBackend(hwnd)` per source, `ScreenSource` finds a saved source's window by process and title among the PC's windows and retries every 2 s while it is not open, the palette window picker lists the PC's windows, `RemoteInputForwarder` sends each press to its panel's stream.
+
+User verification on the headset: window list works, "next source" (picking another window for another screen) works, clicks go only to the pointed-at window, a closed PC window leaves its screen showing the last frame and not interactive (expected; planned: dim it and label it, reconnect when reopened).
+Measured with two streams: terminal window 1033x951 at 20 to 34 ms round trip, browser 1586x993 at 40 to 48 ms.
+
+Next: dimmed "window closed" state; a typing path (headset keyboard to the PC window); pairing code and one-click host app; auto stream width; hardware video if several large windows are active at once.
