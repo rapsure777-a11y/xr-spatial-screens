@@ -42,3 +42,10 @@ User verification on the headset: window list works, "next source" (picking anot
 Measured with two streams: terminal window 1033x951 at 20 to 34 ms round trip, browser 1586x993 at 40 to 48 ms.
 
 Next: dimmed "window closed" state; a typing path (headset keyboard to the PC window); pairing code and one-click host app; auto stream width; hardware video if several large windows are active at once.
+
+## Typing (2026-10-08)
+User verified on the headset: "Everything works".
+- Host: protocol message 'K' (stream, kind, code): kind 0 types one Unicode character (SendInput KEYEVENTF_UNICODE, so layout and shift state do not matter), kind 1/2 press and release a Windows virtual key (extended-key flag set for arrows, Home/End, Insert/Delete, right Ctrl/Alt, Win). The target window is brought to the front first; a held key is released when the stream closes or the headset disconnects. Verified with the ClickTest fixture: characters incl. a non-ASCII one, Ctrl+C as virtual keys, Enter, held Shift released on disconnect.
+- Headset: `KeyboardPanel` (US layout, laser-poked, latching Shift/Ctrl/Alt, Ctrl/Alt + letter/digit sent as real combinations, Move and Close keys, header shows the target window), `UiLayers` (keyboard in front of the palette), `HeadsetKeyboardForwarder` (a Bluetooth keyboard paired to the Frame: text as characters, specials/modifiers/function keys as keys with auto-repeat, letters and digits as keys while Ctrl/Alt held). Keystrokes go to the window last clicked (`RemoteHost.FocusStream`). The PC's own keyboard already types into that window because the host brings it to the front on click.
+- Fixed on the way: the palette's last row was below its panel (unreachable "Hide palette"); `SpatialApp.Keyboard` property name collided with Unity's `Keyboard` class (now `VirtualKeyboard`).
+- Not verified: the Bluetooth keyboard path (needs a keyboard paired to the Frame; unknown whether the Frame passes its keys to the app); non-US layouts on the virtual keyboard; IME/dead keys; keys on exclusive-fullscreen games.
