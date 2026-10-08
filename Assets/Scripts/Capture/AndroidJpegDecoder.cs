@@ -45,7 +45,8 @@ namespace XrSpatial.Capture
                 opts.Set<bool>("inMutable", true);
                 if (m_Bitmap != null && m_Bitmap.Call<int>("getWidth") == expectedWidth && m_Bitmap.Call<int>("getHeight") == expectedHeight)
                     opts.Set<AndroidJavaObject>("inBitmap", m_Bitmap);                      // reuse the previous bitmap's memory
-                var signed = (sbyte[])(Array)jpeg;
+                var signed = new sbyte[length];                                  // a real signed array: Unity warns on every call when handed a byte[]
+                Buffer.BlockCopy(jpeg, 0, signed, 0, length);
                 var bmp = s_Factory.CallStatic<AndroidJavaObject>("decodeByteArray", signed, 0, length, opts);
                 if (bmp == null || bmp.GetRawObject() == IntPtr.Zero) { bmp?.Dispose(); return false; }
                 if (m_Bitmap == null || bmp.GetRawObject() != m_Bitmap.GetRawObject()) { m_Bitmap?.Dispose(); m_Bitmap = bmp; } else bmp.Dispose();
