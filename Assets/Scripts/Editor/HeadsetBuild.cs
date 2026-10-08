@@ -48,6 +48,7 @@ namespace XrSpatial.Editor
             {
                 var asset = AssetDatabase.LoadAssetAtPath<UniversalRenderPipelineAsset>(AssetDatabase.GUIDToAssetPath(guid));
                 if (!asset || !asset.name.StartsWith("Mobile")) continue;
+                asset.renderScale = 1f;                                              // the stock mobile asset renders at 0.8, which blurs text on a virtual monitor
                 asset.msaaSampleCount = 4; asset.supportsHDR = false; asset.supportsCameraDepthTexture = false; asset.supportsCameraOpaqueTexture = false;
                 EditorUtility.SetDirty(asset);
             }

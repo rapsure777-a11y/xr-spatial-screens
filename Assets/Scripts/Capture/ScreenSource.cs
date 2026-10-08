@@ -56,7 +56,9 @@ namespace XrSpatial.Capture
             if (Backend.PollInto(ref m_Raw) && m_Raw)
             {
                 EnsureView(m_Raw.width, m_Raw.height);
-                Graphics.Blit(m_Raw, View);
+                // The capture helper writes the top row first (what the panel shader expects); a decoded JPEG has its bottom row first, so flip it on the GPU.
+                if (Backend is NetworkBackend) Graphics.Blit(m_Raw, View, new Vector2(1f, -1f), new Vector2(0f, 1f));
+                else Graphics.Blit(m_Raw, View);
                 FrameCount++;
             }
             if (Backend.HasEnded && Def.kind != "pattern" && Time.realtimeSinceStartup > m_RetryAt)

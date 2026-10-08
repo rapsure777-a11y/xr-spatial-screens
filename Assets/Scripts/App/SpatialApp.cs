@@ -77,6 +77,8 @@ namespace XrSpatial.App
         {
             XrActive = !Settings.forceDesktop && XRSettings.isDeviceActive && XRGeneralSettings.Instance != null && XRGeneralSettings.Instance.Manager.activeLoader != null;
             if (XrActive) SetFloorTracking();
+            // Text on virtual monitors needs more pixels than the runtime's default eye resolution gives: render a little above it (headset build only).
+            if (XrActive && Application.platform == RuntimePlatform.Android) { XRSettings.eyeTextureResolutionScale = 1.25f; Debug.Log($"[XrSpatial] eye texture scale 1.25 -> {XRSettings.eyeTextureWidth}x{XRSettings.eyeTextureHeight}"); }
             BuildWorld();
             ApplyCommandLine();
         }
