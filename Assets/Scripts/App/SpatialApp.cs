@@ -63,6 +63,8 @@ namespace XrSpatial.App
         {
             if (Instance && Instance != this) { Destroy(gameObject); return; }
             Instance = this;
+            // Headset build (native Android app on the Steam Frame): the windows come from the PC host over the network and the room is the passthrough background.
+            if (Application.platform == RuntimePlatform.Android) { RemoteHost.Enable(); Settings.showControlPanel = false; Settings.background = BackgroundMode.Passthrough; }
             if (Settings.parseCommandLine && Array.IndexOf(Environment.GetCommandLineArgs(), "--xrss-desktop") >= 0) Settings.forceDesktop = true;
             Application.runInBackground = true;
             Application.targetFrameRate = -1;
@@ -111,6 +113,7 @@ namespace XrSpatial.App
             Cam = camGo.AddComponent<Camera>();
             Cam.nearClipPlane = 0.05f; Cam.farClipPlane = 60f;
             Cam.clearFlags = CameraClearFlags.SolidColor; Cam.backgroundColor = new Color(0.01f, 0.012f, 0.02f, 0f);
+            if (Application.platform == RuntimePlatform.Android) Cam.backgroundColor = Color.clear;       // transparent black: the Frame's compositor shows the room wherever alpha is 0
             Cam.allowMSAA = true; Cam.allowHDR = false;
             camGo.AddComponent<AudioListener>();
             var data = Cam.GetUniversalAdditionalCameraData();
@@ -138,6 +141,13 @@ namespace XrSpatial.App
             Forwarder = new GameObject("InputForwarder").AddComponent<InputForwarder>();
             Forwarder.transform.SetParent(XrOrigin, false);
             Forwarder.Tool = Tool;
+            if (RemoteHost.Active)
+            {
+                Forwarder.Enabled = false;                                           // the Windows forwarder cannot run here; the PC host injects the input
+                var remote = new GameObject("RemoteInputForwarder").AddComponent<RemoteInputForwarder>();
+                remote.transform.SetParent(XrOrigin, false);
+                remote.Tool = Tool;
+            }
             if (Settings.showControlPanel) { Control = gameObject.AddComponent<ControlPanel>(); Control.App = this; }
             SetBackground(Settings.background);
 
@@ -155,7 +165,8 @@ namespace XrSpatial.App
             {
                 // Hook for MR: an OpenXR environment blend mode / passthrough layer. The render path already uses a transparent clear colour and opaque panels, so
                 // enabling the runtime's passthrough later requires no change to panels. Not implemented (Steam Frame passthrough APIs are deliberately not a dependency).
-                Debug.Log("[XrSpatial] Passthrough background requested: not available to a streamed PC OpenXR app on this runtime (blend mode list is opaque only), using the void. See Docs/PASSTHROUGH.md.");
+                if (Application.platform == RuntimePlatform.Android) Debug.Log("[XrSpatial] Passthrough background: the camera clears to transparent and the OpenXR alpha-blend mode is requested (PassthroughFeature); the Frame's compositor shows the room.");
+                else Debug.Log("[XrSpatial] Passthrough background requested: not available to a streamed PC OpenXR app on this runtime (blend mode list is opaque only), using the void. See Docs/PASSTHROUGH.md.");
                 return;
             }
             if (mode == BackgroundMode.Grid) m_Grid = BuildGrid();
