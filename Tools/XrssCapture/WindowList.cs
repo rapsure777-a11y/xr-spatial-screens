@@ -37,6 +37,13 @@ namespace XrssCapture
                     var wp = new Native.WINDOWPLACEMENT { length = System.Runtime.InteropServices.Marshal.SizeOf<Native.WINDOWPLACEMENT>() };
                     if (!Native.GetWindowPlacement(hwnd, ref wp)) return true;
                     x = wp.rcNormalPosition.left; y = wp.rcNormalPosition.top; w = wp.rcNormalPosition.right - wp.rcNormalPosition.left; h = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
+                    // a window that was maximized comes back maximized (flag WPF_RESTORETOMAXIMIZED): report the size it will really have, the work area of its monitor, not the smaller normal size
+                    if ((wp.flags & 0x2) != 0 || wp.showCmd == 3)
+                    {
+                        var mi = new Native.MONITORINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<Native.MONITORINFO>() };
+                        var mon = Native.MonitorFromWindow(hwnd, 2);
+                        if (mon != IntPtr.Zero && Native.GetMonitorInfo(mon, ref mi)) { x = mi.rcWork.left; y = mi.rcWork.top; w = mi.rcWork.right - mi.rcWork.left; h = mi.rcWork.bottom - mi.rcWork.top; }
+                    }
                     if (state == "normal") state = "minimized";
                     if (!includeSmall && (w < 160 || h < 120)) return true;
                 }
