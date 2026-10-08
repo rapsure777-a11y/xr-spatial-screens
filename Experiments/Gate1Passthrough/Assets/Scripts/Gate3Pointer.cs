@@ -116,8 +116,39 @@ namespace Gate1
             m_GripPrev = grip;
         }
 
+        // ---- raw button watcher: logs every control change on the controllers by its real name, so the Steam controllers' mapping is visible
+        readonly System.Collections.Generic.Dictionary<string, float> m_Seen = new System.Collections.Generic.Dictionary<string, float>();
+        readonly System.Collections.Generic.List<string> m_Events = new System.Collections.Generic.List<string>();
+        public string RecentButtons => string.Join(" | ", m_Events);
+
+        void WatchControls()
+        {
+            foreach (var dev in InputSystem.devices)
+            {
+                if (!(dev is UnityEngine.InputSystem.XR.XRController)) continue;
+                foreach (var c in dev.allControls)
+                {
+                    float v;
+                    if (c is UnityEngine.InputSystem.Controls.ButtonControl bc) v = bc.ReadValue();
+                    else if (c is UnityEngine.InputSystem.Controls.AxisControl ac && !(c.parent is UnityEngine.InputSystem.Controls.Vector3Control) && !(c.parent is UnityEngine.InputSystem.Controls.QuaternionControl) && !c.path.Contains("rotation", System.StringComparison.OrdinalIgnoreCase) && !c.path.Contains("position", System.StringComparison.OrdinalIgnoreCase) && !c.path.Contains("velocity", System.StringComparison.OrdinalIgnoreCase) && !c.path.Contains("acceleration", System.StringComparison.OrdinalIgnoreCase)) v = ac.ReadValue();
+                    else continue;
+                    string key = c.path;
+                    m_Seen.TryGetValue(key, out float old);
+                    if (Mathf.Abs(v - old) >= 0.25f || (v == 0f && old != 0f))
+                    {
+                        m_Seen[key] = v;
+                        string hand = c.path.Contains("RightHand") || c.device.usages.Count > 0 && c.device.usages[0] == "RightHand" ? "R" : "L";
+                        string msg = $"{hand} {c.name} {old:0.0}->{v:0.0}";
+                        Debug.Log("[Gate3] control " + c.device.name + " " + c.path + " " + old.ToString("0.00") + "->" + v.ToString("0.00"));
+                        m_Events.Add(msg); if (m_Events.Count > 4) m_Events.RemoveAt(0);
+                    }
+                }
+            }
+        }
+
         void Diagnose(bool tracked, bool trig, bool grip, Vector3 origin)
         {
+            WatchControls();
             if (Time.unscaledTime < m_NextDiag) return;
             m_NextDiag = Time.unscaledTime + 3f;
             var sb = new StringBuilder();

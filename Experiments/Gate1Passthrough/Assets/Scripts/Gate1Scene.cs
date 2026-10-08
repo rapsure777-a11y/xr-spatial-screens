@@ -66,7 +66,7 @@ namespace Gate1
             SubsystemManager.GetSubsystems(subs);
             string opaque = subs.Count > 0 ? subs[0].displayOpaque.ToString() : "no display subsystem";
             Debug.Log($"[Gate1] tick: displayOpaque={opaque} cam.clear={m_Cam.clearFlags} bg.alpha={m_Cam.backgroundColor.a} head={m_Cam.transform.position:0.00}");
-            if (m_Text) m_Text.text = "Gate 3a: " + (m_Pointer ? m_Pointer.Status : "") + "\nlast input: " + (m_Stream ? m_Stream.LastInputSent : "") + "\n" + (m_Stream ? m_Stream.Summary : "");
+            if (m_Text) m_Text.text = "Gate 3a: " + (m_Pointer ? m_Pointer.Status : "") + "\nbuttons: " + (m_Pointer ? m_Pointer.RecentButtons : "") + "\nlast input: " + (m_Stream ? m_Stream.LastInputSent : "") + "\n" + (m_Stream ? m_Stream.Summary : "");
         }
     }
 
