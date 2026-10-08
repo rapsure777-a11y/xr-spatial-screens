@@ -14,6 +14,7 @@ namespace Gate1
     {
         Camera m_Cam;
         TextMesh m_Text;
+        Gate2Stream m_Stream;
         float m_Next;
 
         void Start()
@@ -45,11 +46,14 @@ namespace Gate1
                 q.GetComponent<MeshRenderer>().sharedMaterial = mat;
             }
 
+            // Gate 2: the streamed PC window, big and centred 1.8 m ahead at eye height.
+            m_Stream = Gate2Stream.Create(new Vector3(0, 1.45f, 1.8f), 1.7f);
+
             var board = new GameObject("Board");
-            board.transform.position = new Vector3(0, 1.0f, 1.6f);
+            board.transform.position = new Vector3(0, 0.55f, 1.6f);
             m_Text = board.AddComponent<TextMesh>();
-            m_Text.characterSize = 0.012f; m_Text.fontSize = 60; m_Text.anchor = TextAnchor.UpperCenter; m_Text.color = Color.white;
-            m_Text.text = "Gate 1: do you see your room in colour behind the panels?";
+            m_Text.characterSize = 0.008f; m_Text.fontSize = 60; m_Text.anchor = TextAnchor.UpperCenter; m_Text.color = Color.white;
+            m_Text.text = "Gate 2: streaming";
         }
 
         void Update()
@@ -60,7 +64,7 @@ namespace Gate1
             SubsystemManager.GetSubsystems(subs);
             string opaque = subs.Count > 0 ? subs[0].displayOpaque.ToString() : "no display subsystem";
             Debug.Log($"[Gate1] tick: displayOpaque={opaque} cam.clear={m_Cam.clearFlags} bg.alpha={m_Cam.backgroundColor.a} head={m_Cam.transform.position:0.00}");
-            if (m_Text) m_Text.text = "Gate 1: do you see your room in colour behind the panels?\ndisplayOpaque=" + opaque + "\n" + PassthroughFeature.Report;
+            if (m_Text) m_Text.text = "Gate 2 stream: " + (m_Stream ? m_Stream.Summary : "") + "\ndisplayOpaque=" + opaque;
         }
     }
 

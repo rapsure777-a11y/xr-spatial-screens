@@ -47,10 +47,15 @@ namespace Gate1
             var gs = AssetDatabase.LoadAssetAtPath<Object>("ProjectSettings/GraphicsSettings.asset");
             var gso = new SerializedObject(gs);
             var list = gso.FindProperty("m_AlwaysIncludedShaders");
-            var shader = Shader.Find("Unlit/Color");
-            bool have = false;
-            for (int i = 0; i < list.arraySize; i++) if (list.GetArrayElementAtIndex(i).objectReferenceValue == shader) have = true;
-            if (!have) { list.arraySize++; list.GetArrayElementAtIndex(list.arraySize - 1).objectReferenceValue = shader; gso.ApplyModifiedPropertiesWithoutUndo(); }
+            foreach (var name in new[] { "Unlit/Color", "Unlit/Texture" })
+            {
+                var shader = Shader.Find(name);
+                bool have = false;
+                for (int i = 0; i < list.arraySize; i++) if (list.GetArrayElementAtIndex(i).objectReferenceValue == shader) have = true;
+                if (!have) { list.arraySize++; list.GetArrayElementAtIndex(list.arraySize - 1).objectReferenceValue = shader; }
+            }
+            gso.ApplyModifiedPropertiesWithoutUndo();
+            PlayerSettings.Android.forceInternetPermission = true;       // Gate 2: TCP to the PC sender (loopback via adb reverse)
 
             foreach (var group in new[] { BuildTargetGroup.Android, BuildTargetGroup.Standalone })
             {
