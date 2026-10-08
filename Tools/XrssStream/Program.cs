@@ -20,7 +20,10 @@ using System.Threading;
 //     list   'XRSL' u32, jsonLength u32, then UTF-8 JSON: the capturable windows (what XrssCapture --list prints)
 //     status 'XRSS' u32, stream u16, state u8 (0 ended, 1 opened, 2 failed), pad u8   (12 bytes)
 //     audio  'XRSA' u32, pcmLength u32, sampleRate u32, channels u16 (2), pad u16, then 16-bit little-endian interleaved PCM  (16-byte header; the PC's output, in ~10 ms chunks)
+//     layout 'XRSY' u32, nameLength u16, pad u16, dataLength u32, then the name and the layout file (one message per backed-up layout)
 //   client -> server
+//     'Y' nameLength u8, name, dataLength u32, data   back up a layout file on the PC (name: letters, digits . _ - only)
+//     'Z'                                  send me every backed-up layout
 //     'S' on u8                            start (1) or stop (0) sending the PC's sound
 //     'R' stream u16, maxWidth u16, fps u8 quality for one stream: the widest picture to send and its frame-rate cap (out-of-view screens ask for a low rate)
 //     'W'                                  send me the window list
@@ -32,7 +35,7 @@ using System.Threading;
 //     'K' stream u16, kind u8, code u32    key: kind 0 type the character (UTF-16 code), 1 key down, 2 key up (Windows virtual-key code); the window is brought to the front first
 static unsafe class Program
 {
-    public const uint ListMagic = 0x4C535258, FrameMagic = 0x32535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258;     // 'XRSL', 'XRS2', 'XRSS', 'XRSA'
+    public const uint ListMagic = 0x4C535258, FrameMagic = 0x32535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258, LayoutMagic = 0x59535258;     // 'XRSL', 'XRS2', 'XRSS', 'XRSA', 'XRSY'
     public static string CapturePath;
     public static int Fps = 60, MaxW = 2880, Quality = 90;
 
@@ -209,6 +212,7 @@ sealed unsafe class Session
     {
         var b = new byte[32];
         void Fill(int n) { int got = 0; while (got < n) { int r = m_Net.Read(b, got, n - got); if (r <= 0) throw new EndOfStreamException(); got += r; } }
+        byte[] Take(int n) { var buf = new byte[n]; int got = 0; while (got < n) { int r = m_Net.Read(buf, got, n - got); if (r <= 0) throw new EndOfStreamException(); got += r; } return buf; }
         try
         {
             while (true)
@@ -242,6 +246,15 @@ sealed unsafe class Session
                             if (s != null) { s.MaxW = Math.Clamp((int)BitConverter.ToUInt16(b, 2), 320, 7680); s.FpsCap = Math.Clamp((int)b[4], 1, Program.Fps); }
                             break;
                         }
+                    case 'Y':
+                        {
+                            Fill(1); int nl = b[0]; var nameBytes = Take(nl); Fill(4); int dl = (int)BitConverter.ToUInt32(b, 0);
+                            if (dl < 0 || dl > LayoutStore.MaxBytes) throw new InvalidDataException("layout too large");
+                            var data = Take(dl); string name = Encoding.UTF8.GetString(nameBytes);
+                            Console.WriteLine(LayoutStore.Save(name, data) ? $"layout backup saved: {name} ({dl} bytes)" : $"layout backup refused: '{name}'");
+                            break;
+                        }
+                    case 'Z': SendLayouts(); break;
                     case 'K': { Fill(7); Find(BitConverter.ToUInt16(b, 0))?.Injector.Key(b[2], BitConverter.ToUInt32(b, 3)); break; }
                     default: throw new InvalidDataException("unknown message " + b[0]);
                 }
@@ -252,6 +265,23 @@ sealed unsafe class Session
     }
 
     StreamState Find(ushort id) { lock (m_StreamsLock) return m_Streams.TryGetValue(id, out var s) ? s : null; }
+
+    /// <summary>Sends every backed-up layout to the headset (it asks after a start-up so a reinstalled app gets its screens back).</summary>
+    void SendLayouts()
+    {
+        try
+        {
+            var all = LayoutStore.All();
+            foreach (var kv in all)
+            {
+                var name = Encoding.UTF8.GetBytes(kv.Key);
+                var h = new byte[12]; BitConverter.GetBytes(Program.LayoutMagic).CopyTo(h, 0); BitConverter.GetBytes((ushort)name.Length).CopyTo(h, 4); BitConverter.GetBytes((uint)kv.Value.Length).CopyTo(h, 8);
+                lock (m_WriteLock) { m_Net.Write(h, 0, h.Length); m_Net.Write(name, 0, name.Length); m_Net.Write(kv.Value, 0, kv.Value.Length); }
+            }
+            Console.WriteLine($"layout backup: sent {all.Count} file(s) to the headset");
+        }
+        catch (Exception e) { Console.WriteLine("layout backup send failed: " + e.Message); m_Gone = true; }
+    }
 
     AudioSender m_Audio;
     long m_AudioStatAt;
