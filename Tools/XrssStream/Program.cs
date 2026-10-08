@@ -142,7 +142,25 @@ sealed unsafe class StreamState
     {
         counter = *(uint*)(Base + OffFrameCounter); w = *(int*)(Base + OffWidth); h = *(int*)(Base + OffHeight); stride = *(int*)(Base + OffStride);
         slot = *(int*)(Base + OffLatestSlot); cap = *(int*)(Base + OffSlotCapacity);
-        return counter != LastCounter && w > 0 && h > 0;
+        // Only frames with a sane shape go on: a window that is resizing (a video going full screen) can publish an odd size for a moment, and handing that to the JPEG encoder crashed the whole host.
+        return counter != LastCounter && w >= 16 && h >= 16 && w <= 8192 && h <= 8192 && stride >= w * 4 && (slot == 0 || slot == 1) && (long)stride * h <= cap;
+    }
+
+    // ------------------------------------------------------------------ helper crashes
+
+    long m_RestartWindowStart; int m_Restarts;
+
+    public bool WindowExists => IsWindow(new IntPtr(Hwnd));
+
+    /// <summary>The capture helper died but the window is still there (the helper crashed): start it again, at most 4 times a minute. False when it should not be retried.</summary>
+    public bool TryRestartCapture()
+    {
+        long now = Stopwatch.GetTimestamp();
+        if (now - m_RestartWindowStart > 60 * Stopwatch.Frequency) { m_RestartWindowStart = now; m_Restarts = 0; }
+        if (!WindowExists || ++m_Restarts > 4) return false;
+        try { if (Base != null) View.SafeMemoryMappedViewHandle.ReleasePointer(); Base = null; View?.Dispose(); Mmf?.Dispose(); } catch { }
+        View = null; Mmf = null; Ready = false; LastCounter = 0; OpenedAt = now;
+        try { StartCapture(); Console.WriteLine($"stream {Id}: capture helper restarted ({m_Restarts})"); return true; } catch { return false; }
     }
 
     public uint CounterNow => *(uint*)(Base + OffFrameCounter);
@@ -313,11 +331,19 @@ sealed unsafe class Session
                     if (!s.Ready)
                     {
                         if (s.TryOpenMap()) { SendStatus(s.Id, 1); Console.WriteLine($"stream {s.Id}: capturing"); }
-                        else if (s.HelperDied) { Console.WriteLine($"stream {s.Id}: capture helper exited before the first frame"); CloseFailed(s); }
+                        else if (s.HelperDied)
+                        {
+                            if (s.TryRestartCapture()) continue;
+                            Console.WriteLine($"stream {s.Id}: capture helper exited before the first frame"); CloseFailed(s);
+                        }
                         else if ((Stopwatch.GetTimestamp() - s.OpenedAt) > 8 * Stopwatch.Frequency) { Console.WriteLine($"stream {s.Id}: no frames after 8 s"); CloseFailed(s); }
                         continue;
                     }
-                    if (s.HelperDied) { Console.WriteLine($"stream {s.Id}: window closed"); CloseEnded(s); continue; }
+                    if (s.HelperDied)
+                    {
+                        if (s.TryRestartCapture()) continue;                                          // the helper crashed but the window is still open
+                        Console.WriteLine($"stream {s.Id}: window closed"); CloseEnded(s); continue;
+                    }
                     long now = Stopwatch.GetTimestamp();
                     if (now - s.LastSend < Stopwatch.Frequency / Math.Max(1, s.FpsCap) || Volatile.Read(ref m_InFlight) >= Workers || Volatile.Read(ref s.InFlight) >= 2) continue;
                     if (!s.HasNewFrame(out uint counter, out int w, out int h, out int stride, out int slot, out int cap)) continue;
@@ -357,14 +383,19 @@ sealed unsafe class Session
             {
                 // SkiaSharp (libjpeg-turbo): scale into the output size, then encode 4:4:4 so coloured text edges stay clean.
                 int ow = Math.Min(cw, s.MaxW), oh = (int)((long)ch * ow / cw);
-                byte[] data;
+                if (ow < 16 || oh < 16) return;                                       // an odd-shaped frame: skip it (the encoder crashes the whole host on empty pictures)
+                byte[] data = null;
                 using (var dstBmp = new SKBitmap(new SKImageInfo(ow, oh, SKColorType.Bgra8888, SKAlphaType.Opaque)))
                 {
+                    if (dstBmp.GetPixels() == IntPtr.Zero) return;                  // the output picture could not be allocated
+                    bool scaled;
                     fixed (byte* sp = buf)
                     using (var srcPix = new SKPixmap(new SKImageInfo(cw, ch, SKColorType.Bgra8888, SKAlphaType.Opaque), (IntPtr)sp, cstride))
-                        srcPix.ScalePixels(dstBmp.PeekPixels(), new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
+                        scaled = srcPix.ScalePixels(dstBmp.PeekPixels(), new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
+                    if (!scaled) return;
                     Interlocked.Add(ref s.ScaleTicks, Stopwatch.GetTimestamp() - t0);
                     using var enc = dstBmp.PeekPixels().Encode(new SKJpegEncoderOptions(Program.Quality, SKJpegEncoderDownsample.Downsample444, SKJpegEncoderAlphaOption.Ignore));
+                    if (enc == null) return;
                     data = enc.ToArray();
                 }
                 Interlocked.Add(ref s.EncTicks, Stopwatch.GetTimestamp() - t0);
