@@ -49,6 +49,42 @@ namespace Gate1
             return s;
         }
 
+        readonly object m_WriteLock = new object();
+        public string LastInputSent = "none";
+        int m_SentInputs;
+
+        void Write(byte[] msg)
+        {
+            var net = m_Net;
+            if (net == null) return;
+            try { lock (m_WriteLock) net.Write(msg, 0, msg.Length); } catch { }
+        }
+
+        /// <summary>Pointer event for the PC: kind 0 move, 1 left down, 2 left up, 3 right click, 4 wheel; (u, v) on the streamed image, origin top-left.</summary>
+        public void SendPointer(byte kind, float u, float v, float wheel)
+        {
+            var m = new byte[14]; m[0] = (byte)'P'; m[1] = kind;
+            BitConverter.GetBytes(u).CopyTo(m, 2); BitConverter.GetBytes(v).CopyTo(m, 6); BitConverter.GetBytes(wheel).CopyTo(m, 10);
+            Write(m);
+            if (kind != 0) { m_SentInputs++; LastInputSent = $"#{m_SentInputs} kind {kind} at {u:0.000},{v:0.000}"; }
+        }
+
+        public void SendLost() => Write(new[] { (byte)'L' });
+
+        /// <summary>Intersects a ray with the panel; uv is the position on the streamed image (0..1, origin top-left).</summary>
+        public bool Raycast(Ray ray, out Vector2 uv, out Vector3 point)
+        {
+            uv = default; point = default;
+            var t = m_Panel.transform;
+            var plane = new Plane(-t.forward, t.position);
+            if (!plane.Raycast(ray, out float d) || d <= 0f) return false;
+            point = ray.GetPoint(d);
+            var local = t.InverseTransformPoint(point);
+            if (Mathf.Abs(local.x) > 0.5f || Mathf.Abs(local.y) > 0.5f) return false;
+            uv = new Vector2(local.x + 0.5f, 0.5f - local.y);
+            return true;
+        }
+
         void Start()
         {
             m_Thread = new Thread(Receive) { IsBackground = true, Name = "Gate2Receive" };
@@ -109,7 +145,7 @@ namespace Gate1
                     m_Shown++; m_Bytes += data.Length;
                     float aspect = (float)m_Tex.width / m_Tex.height;
                     var t = m_Panel.transform; t.localScale = new Vector3(t.localScale.x, t.localScale.x / aspect, 1f);
-                    try { var net = m_Net; if (net != null) net.Write(BitConverter.GetBytes(seq), 0, 4); } catch { }
+                    var ack = new byte[5]; ack[0] = (byte)'A'; BitConverter.GetBytes(seq).CopyTo(ack, 1); Write(ack);
                 }
             }
             float dt = Time.unscaledTime - m_StatStart;

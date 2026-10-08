@@ -89,6 +89,13 @@ namespace Gate1
                 var oxr = OpenXRSettings.GetSettingsForBuildTargetGroup(group);
                 if (oxr != null)
                 {
+                    // Gate 3: enable the standard controller profiles so whichever one the Frame's runtime picks delivers poses and buttons
+                    foreach (var ip in oxr.GetFeatures<UnityEngine.XR.OpenXR.Features.Interactions.OculusTouchControllerProfile>()) ip.enabled = true;
+                    foreach (var ip in oxr.GetFeatures<UnityEngine.XR.OpenXR.Features.Interactions.MetaQuestTouchPlusControllerProfile>()) ip.enabled = true;
+                    foreach (var ip in oxr.GetFeatures<UnityEngine.XR.OpenXR.Features.Interactions.MetaQuestTouchProControllerProfile>()) ip.enabled = true;
+                    foreach (var ip in oxr.GetFeatures<UnityEngine.XR.OpenXR.Features.Interactions.KHRSimpleControllerProfile>()) ip.enabled = true;
+                    foreach (var ip in oxr.GetFeatures<UnityEngine.XR.OpenXR.Features.Interactions.ValveIndexControllerProfile>()) ip.enabled = true;
+                    foreach (var ip in oxr.GetFeatures<UnityEngine.XR.OpenXR.Features.Interactions.HTCViveControllerProfile>()) ip.enabled = true;
                     foreach (var f in oxr.GetFeatures())
                     {
                         if (f is PassthroughFeature) { f.enabled = true; Debug.Log($"[Gate1] feature enabled for {group}: {f.name}"); }

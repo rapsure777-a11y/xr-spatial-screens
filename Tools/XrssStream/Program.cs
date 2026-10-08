@@ -19,6 +19,7 @@ using System.Threading;
 // Client -> server: the seq (u32) of each frame it has decoded and shown (used to measure round-trip latency).
 static class Program
 {
+    const int OffHwnd = 76;
     const int OffMagic = 0, OffMaxWidth = 16, OffMaxHeight = 20, OffFrameCounter = 24, OffLatestSlot = 28, OffWidth = 32, OffHeight = 36, OffStride = 40;
     const int HeaderSize = 256;
     const uint Magic = 0x43535258, FrameMagic = 0x46535258;     // 'XRSC', 'XRSF'
@@ -55,21 +56,34 @@ static class Program
         var net = client.GetStream();
         var sentAt = new long[1 << 12];                         // seq -> Stopwatch ticks when the frame was fully written
         long ackCount = 0, rttTicksSum = 0, rttMaxTicks = 0;
+        // Headset -> PC messages: 'A' + seq u32 (frame shown); 'P' + kind u8 + u f32 + v f32 + wheel f32 (pointer event, see InputInjector); 'L' (pointer lost).
+        var injector = new InputInjector(() => new IntPtr((long)view.ReadUInt32(OffHwnd)));
         var ackThread = new Thread(() =>
         {
-            var b = new byte[4];
+            var b = new byte[16];
+            void Fill(int n) { int got = 0; while (got < n) { int r = net.Read(b, got, n - got); if (r <= 0) throw new EndOfStreamException(); got += r; } }
             try
             {
                 while (true)
                 {
-                    int got = 0; while (got < 4) { int n = net.Read(b, got, 4 - got); if (n <= 0) return; got += n; }
-                    uint seq = BitConverter.ToUInt32(b, 0);
-                    long rtt = Stopwatch.GetTimestamp() - Volatile.Read(ref sentAt[seq & (sentAt.Length - 1)]);
-                    Interlocked.Increment(ref ackCount); Interlocked.Add(ref rttTicksSum, rtt);
-                    long cur; do { cur = Interlocked.Read(ref rttMaxTicks); } while (rtt > cur && Interlocked.CompareExchange(ref rttMaxTicks, rtt, cur) != cur);
+                    Fill(1);
+                    switch ((char)b[0])
+                    {
+                        case 'A':
+                            Fill(4);
+                            uint seq = BitConverter.ToUInt32(b, 0);
+                            long rtt = Stopwatch.GetTimestamp() - Volatile.Read(ref sentAt[seq & (sentAt.Length - 1)]);
+                            Interlocked.Increment(ref ackCount); Interlocked.Add(ref rttTicksSum, rtt);
+                            long cur; do { cur = Interlocked.Read(ref rttMaxTicks); } while (rtt > cur && Interlocked.CompareExchange(ref rttMaxTicks, rtt, cur) != cur);
+                            break;
+                        case 'P': Fill(13); injector.Handle(b[0], BitConverter.ToSingle(b, 1), BitConverter.ToSingle(b, 5), BitConverter.ToSingle(b, 9)); break;
+                        case 'L': injector.Handle(InputInjector.Lost, 0, 0, 0); break;
+                        default: throw new InvalidDataException("unknown message " + b[0]);
+                    }
                 }
             }
             catch { }
+            finally { injector.Release("headset disconnected"); }
         }) { IsBackground = true };
         ackThread.Start();
 
