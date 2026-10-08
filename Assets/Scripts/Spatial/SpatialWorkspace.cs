@@ -20,6 +20,8 @@ namespace XrSpatial.Spatial
         public bool AutoSave = true;
         public string LayoutDirectory { get; set; }
         public event Action Changed;
+        /// <summary>Raised after the layout has been written to disk: (application key, the layout as JSON). The headset build backs it up on the PC from here.</summary>
+        public event Action<string, string> LayoutSaved;
         public event Action<PanelView> PanelAdded, PanelRemoved;
 
         readonly List<PanelView> m_Panels = new List<PanelView>();
@@ -61,7 +63,7 @@ namespace XrSpatial.Spatial
         public void SaveNow()
         {
             m_SaveAt = -1f;
-            try { Layout.Save(LayoutDirectory); }
+            try { Layout.Save(LayoutDirectory); LayoutSaved?.Invoke(Layout.appKey, Layout.ToJson()); }
             catch (Exception e) { Debug.LogWarning("[XrSpatial] could not save layout: " + e.Message); }
         }
 

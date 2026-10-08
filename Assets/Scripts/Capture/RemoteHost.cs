@@ -20,7 +20,7 @@ namespace XrSpatial.Capture
     {
         public const string Address = "127.0.0.1";
         public const int Port = 5600;
-        const uint FrameMagic = 0x32535258, ListMagic = 0x4C535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258;       // 'XRS2', 'XRSL', 'XRSS', 'XRSA'
+        const uint FrameMagic = 0x32535258, ListMagic = 0x4C535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258, LayoutMagic = 0x59535258;       // 'XRS2', 'XRSL', 'XRSS', 'XRSA', 'XRSY'
 
         sealed class Stream
         {
@@ -104,6 +104,15 @@ namespace XrSpatial.Capture
                             Read(net, audioBuf, len);
                             if (SoundEnabled) RemoteAudio.Push(audioBuf, len, rate);
                         }
+                        else if (magic == LayoutMagic)
+                        {
+                            Read(net, hdr, 8);
+                            int nl = BitConverter.ToUInt16(hdr, 0), dl = (int)BitConverter.ToUInt32(hdr, 4);
+                            if (dl < 0 || dl > 2000000) throw new Exception("bad layout size");
+                            var nameBytes = new byte[nl]; Read(net, nameBytes, nl);
+                            var data = new byte[dl]; Read(net, data, dl);
+                            s_Layouts.Enqueue((Encoding.UTF8.GetString(nameBytes), data));
+                        }
                         else if (magic == StatusMagic)
                         {
                             Read(net, hdr, 8);
@@ -139,6 +148,29 @@ namespace XrSpatial.Capture
 
         public static void RequestList() => Write(new[] { (byte)'W' });
 
+        // ------------------------------------------------------------------ layout backup on the PC
+
+        static readonly System.Collections.Concurrent.ConcurrentQueue<(string name, byte[] data)> s_Layouts = new System.Collections.Concurrent.ConcurrentQueue<(string name, byte[] data)>();
+
+        /// <summary>A backed-up layout file that arrived from the PC (after <see cref="RequestLayouts"/>), if any.</summary>
+        public static bool TryTakeLayout(out string name, out byte[] data)
+        {
+            if (s_Layouts.TryDequeue(out var item)) { name = item.name; data = item.data; return true; }
+            name = null; data = null; return false;
+        }
+
+        /// <summary>Asks the PC for every backed-up layout.</summary>
+        public static void RequestLayouts() => Write(new[] { (byte)'Z' });
+
+        /// <summary>Backs a layout file up on the PC (name: letters, digits, '.', '_' and '-' only).</summary>
+        public static void SendLayout(string name, byte[] data)
+        {
+            var nb = Encoding.UTF8.GetBytes(name);
+            if (nb.Length == 0 || nb.Length > 120 || data == null || data.Length > 2000000) return;
+            var m = new byte[1 + 1 + nb.Length + 4 + data.Length];
+            m[0] = (byte)'Y'; m[1] = (byte)nb.Length; nb.CopyTo(m, 2); BitConverter.GetBytes((uint)data.Length).CopyTo(m, 2 + nb.Length); data.CopyTo(m, 6 + nb.Length);
+            Write(m);
+        }
         /// <summary>Whether the PC's sound is wanted on the headset. Sent to the host (which starts or stops capturing it) and again after every reconnect.</summary>
         public static bool SoundEnabled { get; private set; } = true;
         public static void SetSound(bool on) { SoundEnabled = on; if (!on) RemoteAudio.Reset(); SendSound(); }
