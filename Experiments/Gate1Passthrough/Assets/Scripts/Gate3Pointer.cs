@@ -15,7 +15,9 @@ namespace Gate1
         const float PressThreshold = 0.6f;
 
         Gate2Stream m_Stream;
-        InputAction m_PosR, m_RotR, m_Trigger, m_Grip, m_StickL, m_PosL, m_RotL;
+        InputAction m_PosR, m_RotR, m_Trigger, m_Grip, m_StickL, m_PosL, m_RotL, m_Primary, m_StickR;
+        bool m_PrimaryPrev, m_Grabbing;
+        Vector3 m_GrabOffsetLocal;
         LineRenderer m_Line;
         Transform m_Dot;
         bool m_Held, m_GripPrev, m_Hit;
@@ -40,6 +42,7 @@ namespace Gate1
             m_PosR = Value(R + "/pointerPosition", "Vector3"); m_RotR = Value(R + "/pointerRotation", "Quaternion");
             m_PosL = Value(L + "/pointerPosition", "Vector3"); m_RotL = Value(L + "/pointerRotation", "Quaternion");
             m_Trigger = Button(R + "/{Trigger}"); m_Grip = Button(R + "/{Grip}"); m_StickL = Value(L + "/{Primary2DAxis}", "Vector2");
+            m_Primary = Button(R + "/{PrimaryButton}"); m_StickR = Value(R + "/{Primary2DAxis}", "Vector2");
 
             var lineGo = new GameObject("Laser");
             lineGo.transform.SetParent(transform, false);
@@ -78,12 +81,34 @@ namespace Gate1
             if (m_Hit) { end = hitPoint; m_Dot.position = hitPoint; m_Dot.gameObject.SetActive(true); }
             m_Line.SetPosition(0, origin + ray.direction * 0.03f); m_Line.SetPosition(1, end);
 
+            // ---- placement: hold the grip on the panel to carry it with the hand; right stick up/down resizes it
+            var panel = m_Stream.PanelTransform;
+            if (grip && !m_GripPrev && m_Hit && !m_Held)
+            {
+                m_Grabbing = true; m_GrabOffsetLocal = Quaternion.Inverse(rot) * (panel.position - origin);
+            }
+            if (!grip) m_Grabbing = false;
+            if (m_Grabbing)
+            {
+                var pos = origin + rot * m_GrabOffsetLocal;
+                var head = Camera.main ? Camera.main.transform.position : new Vector3(0, 1.5f, 0);
+                var away = pos - head; away.y = 0f;
+                panel.position = pos;
+                if (away.sqrMagnitude > 1e-4f) panel.rotation = Quaternion.LookRotation(away.normalized, Vector3.up);   // upright, facing the user
+                float sy = m_StickR.ReadValue<Vector2>().y;
+                if (Mathf.Abs(sy) > 0.2f) m_Stream.SetWidth(Mathf.Clamp(m_Stream.Width * (1f + sy * 1.2f * Time.unscaledDeltaTime), 0.4f, 4f));
+                m_GripPrev = grip;
+                return;                                          // no clicks while carrying
+            }
+            bool primary = m_Primary.IsPressed();
+            bool primaryDown = primary && !m_PrimaryPrev; m_PrimaryPrev = primary;
+
             if (m_Hit)
             {
                 if (trig && !m_Held) { m_Stream.SendPointer(LeftDown, uv.x, uv.y, 0); m_Held = true; m_LastSent = uv; }
                 else if (m_Held && (uv - m_LastSent).sqrMagnitude > 1e-8f) { m_Stream.SendPointer(Move, uv.x, uv.y, 0); m_LastSent = uv; }
                 else if (!m_Held && (uv - m_LastSent).sqrMagnitude > 4e-7f) { m_Stream.SendPointer(Move, uv.x, uv.y, 0); m_LastSent = uv; }
-                if (grip && !m_GripPrev && !m_Held) m_Stream.SendPointer(RightClick, uv.x, uv.y, 0);
+                if (primaryDown && !m_Held) m_Stream.SendPointer(RightClick, uv.x, uv.y, 0);
                 float sy = m_StickL.ReadValue<Vector2>().y;
                 if (Mathf.Abs(sy) > 0.5f && Time.unscaledTime > m_NextWheel) { m_Stream.SendPointer(Wheel, uv.x, uv.y, Mathf.Sign(sy)); m_NextWheel = Time.unscaledTime + 0.08f; }
             }
@@ -101,6 +126,6 @@ namespace Gate1
             Debug.Log($"[Gate3] devices: {sb}| {Status} pos={origin:0.00} | input: {m_Stream.LastInputSent}");
         }
 
-        void OnDestroy() { m_PosR?.Dispose(); m_RotR?.Dispose(); m_PosL?.Dispose(); m_RotL?.Dispose(); m_Trigger?.Dispose(); m_Grip?.Dispose(); m_StickL?.Dispose(); }
+        void OnDestroy() { m_Primary?.Dispose(); m_StickR?.Dispose(); m_PosR?.Dispose(); m_RotR?.Dispose(); m_PosL?.Dispose(); m_RotL?.Dispose(); m_Trigger?.Dispose(); m_Grip?.Dispose(); m_StickL?.Dispose(); }
     }
 }

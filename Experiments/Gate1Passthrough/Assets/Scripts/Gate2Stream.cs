@@ -71,6 +71,10 @@ namespace Gate1
 
         public void SendLost() => Write(new[] { (byte)'L' });
 
+        public Transform PanelTransform => m_Panel.transform;
+        public float Width => m_Panel.transform.localScale.x;
+        public void SetWidth(float w) { var t = m_Panel.transform; float aspect = t.localScale.x / t.localScale.y; t.localScale = new Vector3(w, w / aspect, 1f); }
+
         /// <summary>Intersects a ray with the panel; uv is the position on the streamed image (0..1, origin top-left).</summary>
         public bool Raycast(Ray ray, out Vector2 uv, out Vector3 point)
         {
