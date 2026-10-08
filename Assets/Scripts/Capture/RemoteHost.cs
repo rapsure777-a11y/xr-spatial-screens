@@ -203,6 +203,19 @@ namespace XrSpatial.Capture
             if (kind != 0) { s_SentInputs++; LastInputSent = $"#{s_SentInputs} stream {id} kind {kind} at {u:0.000},{v:0.000}"; }
         }
 
+        /// <summary>The stream that keystrokes go to: the window last pressed with the laser (the PC brings it to the front before typing). 0 means none yet.</summary>
+        public static ushort FocusStream { get; set; }
+        public static string FocusLabel { get; set; } = "";
+
+        public const byte KeyText = 0, KeyDown = 1, KeyUp = 2;
+
+        /// <summary>A key for a stream's window: kind 0 types one character (UTF-16 code), 1 presses a Windows virtual key, 2 releases it.</summary>
+        public static void SendKey(ushort id, byte kind, uint code)
+        {
+            var m = new byte[8]; m[0] = (byte)'K'; BitConverter.GetBytes(id).CopyTo(m, 1); m[3] = kind; BitConverter.GetBytes(code).CopyTo(m, 4);
+            Write(m);
+        }
+
         public static void SendLost(ushort id)
         {
             var m = new byte[3]; m[0] = (byte)'L'; BitConverter.GetBytes(id).CopyTo(m, 1);

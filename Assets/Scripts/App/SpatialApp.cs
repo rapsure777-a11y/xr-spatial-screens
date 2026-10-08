@@ -37,6 +37,7 @@ namespace XrSpatial.App
         public SpatialWorkspace Workspace { get; private set; }
         public SurfaceTool Tool { get; private set; }
         public PalettePanel Palette { get; private set; }
+        public KeyboardPanel VirtualKeyboard { get; private set; }
         public ControlPanel Control { get; private set; }
         public InputForwarder Forwarder { get; private set; }
         public Camera Cam { get; private set; }
@@ -139,8 +140,10 @@ namespace XrSpatial.App
             Palette.OnAddPattern = () => AddPattern();
             Palette.OnPickWindow = w => UseWindow(w);
             Palette.OnPickMonitor = i => AddMonitor(i);
-            Tool.Ui = Palette;
-            Forwarder = new GameObject("InputForwarder").AddComponent<InputForwarder>();
+            VirtualKeyboard = KeyboardPanel.Create(XrOrigin, Tool, Pointer);
+            Palette.OnToggleKeyboard = () => VirtualKeyboard.Toggle();
+            Tool.Ui = new UiLayers(VirtualKeyboard, Palette);                              // the keyboard sits in front of the palette
+            Forwarder =new GameObject("InputForwarder").AddComponent<InputForwarder>();
             Forwarder.transform.SetParent(XrOrigin, false);
             Forwarder.Tool = Tool;
             if (RemoteHost.Active)
@@ -149,6 +152,7 @@ namespace XrSpatial.App
                 var remote = new GameObject("RemoteInputForwarder").AddComponent<RemoteInputForwarder>();
                 remote.transform.SetParent(XrOrigin, false);
                 remote.Tool = Tool;
+                new GameObject("HeadsetKeyboard").AddComponent<HeadsetKeyboardForwarder>().transform.SetParent(XrOrigin, false);       // a keyboard connected to the Frame types into the last clicked window
             }
             if (Settings.showControlPanel) { Control = gameObject.AddComponent<ControlPanel>(); Control.App = this; }
             SetBackground(Settings.background);

@@ -52,7 +52,7 @@ namespace XrSpatial.Spatial
             m_LastUv = uv;
             Vector2 src = panel.UvToSource(uv);
 
-            if (s.triggerDown && !m_Left) { RemoteHost.SendPointer(stream, LeftDown, src.x, src.y, 0); m_Left = true; m_Target = panel; m_Stream = stream; m_LastSent = src; LastAction = "left down"; }
+            if (s.triggerDown && !m_Left) { RemoteHost.FocusStream = stream; RemoteHost.FocusLabel = panel.Source.Def.label ?? panel.Source.Def.id; RemoteHost.SendPointer(stream, LeftDown, src.x, src.y, 0); m_Left = true; m_Target = panel; m_Stream = stream; m_LastSent = src; LastAction = "left down"; }
             else if (m_Left && (s.triggerUp || !s.triggerHeld)) { RemoteHost.SendPointer(stream, LeftUp, src.x, src.y, 0); m_Left = false; m_Target = null; LastAction = "left up"; }
             else if ((src - m_LastSent).sqrMagnitude > 4e-7f) { RemoteHost.SendPointer(stream, Move, src.x, src.y, 0); m_LastSent = src; }
 
