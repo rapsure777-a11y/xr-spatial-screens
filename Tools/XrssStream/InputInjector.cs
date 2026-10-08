@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -17,7 +18,10 @@ sealed class InputInjector
     const double DoubleClickSeconds = 0.5, ActivationTimeoutSeconds = 0.5;
 
     [StructLayout(LayoutKind.Sequential)] struct MOUSEINPUT { public int dx, dy; public uint mouseData, dwFlags, time; public UIntPtr dwExtraInfo; }
-    [StructLayout(LayoutKind.Explicit, Size = 40)] struct INPUT { [FieldOffset(0)] public uint type; [FieldOffset(8)] public MOUSEINPUT mi; }
+    [StructLayout(LayoutKind.Sequential)] struct KEYBDINPUT { public ushort wVk, wScan; public uint dwFlags, time; public UIntPtr dwExtraInfo; }
+    [StructLayout(LayoutKind.Explicit, Size = 40)] struct INPUT { [FieldOffset(0)] public uint type; [FieldOffset(8)] public MOUSEINPUT mi; [FieldOffset(8)] public KEYBDINPUT ki; }
+    const uint KEYEVENTF_EXTENDEDKEY = 0x1, KEYEVENTF_KEYUP = 0x2, KEYEVENTF_UNICODE = 0x4;
+    [DllImport("user32.dll")] static extern uint MapVirtualKey(uint code, uint mapType);
     [StructLayout(LayoutKind.Sequential)] struct RECT { public int left, top, right, bottom; }
     [StructLayout(LayoutKind.Sequential)] struct POINT { public int x, y; }
     const uint MOVEF = 0x1, LEFTDOWN = 0x2, LEFTUP = 0x4, RIGHTDOWN = 0x8, RIGHTUP = 0x10, WHEEL = 0x800, ABSOLUTE = 0x8000, VIRTUALDESK = 0x4000, GA_ROOTOWNER = 3;
@@ -140,7 +144,53 @@ sealed class InputInjector
         return false;
     }
 
-    /// <summary>Lets go of a held button (headset disconnected, tracking lost, window gone) so nothing stays pressed.</summary>
+    // ------------------------------------------------------------------ keyboard
+
+    public const byte KeyText = 0, KeyDown = 1, KeyUp = 2;
+    readonly HashSet<ushort> m_KeysDown = new HashSet<ushort>();
+
+    static bool IsExtendedKey(ushort vk) => vk == 0x21 || vk == 0x22 || vk == 0x23 || vk == 0x24 || (vk >= 0x25 && vk <= 0x28) || vk == 0x2D || vk == 0x2E || vk == 0xA3 || vk == 0xA5 || vk == 0x5B || vk == 0x5C;
+
+    static void SendKey(ushort vk, ushort scan, uint flags)
+    {
+        var i = new INPUT { type = 1 /* INPUT_KEYBOARD */, ki = new KEYBDINPUT { wVk = vk, wScan = scan, dwFlags = flags } };
+        if (SendInput(1, new[] { i }, Marshal.SizeOf<INPUT>()) == 0) Console.WriteLine("SendInput (keyboard) failed, win32 error " + Marshal.GetLastWin32Error());
+    }
+
+    /// <summary>A key from the headset: kind 0 types one character (Unicode, so layout and shift state do not matter), 1 presses a virtual key, 2 releases it. The window is brought to the front first; nothing is typed into any other window.</summary>
+    public void Key(byte kind, uint code)
+    {
+        var hwnd = m_Window();
+        if (hwnd == IntPtr.Zero || !IsWindow(hwnd)) { Last = "key refused: window gone"; return; }
+        if (kind == KeyUp && m_KeysDown.Contains((ushort)code)) { ReleaseKey((ushort)code); return; }      // releasing never needs the window in front
+        if (kind == KeyUp) return;
+        if (!BringToFront(hwnd)) { Refusals++; Last = "key refused: Windows would not bring the window to the front"; Console.WriteLine(Last); return; }
+        if (kind == KeyText)
+        {
+            if (code == 0 || code > 0xFFFF) return;
+            SendKey(0, (ushort)code, KEYEVENTF_UNICODE); SendKey(0, (ushort)code, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP);
+            Last = "typed char " + code;
+        }
+        else if (kind == KeyDown)
+        {
+            ushort vk = (ushort)code;
+            if (vk == 0 || vk > 0xFE) return;
+            uint flags = IsExtendedKey(vk) ? KEYEVENTF_EXTENDEDKEY : 0;
+            SendKey(vk, (ushort)MapVirtualKey(vk, 0), flags);
+            m_KeysDown.Add(vk); Last = "key down " + vk;
+        }
+    }
+
+    void ReleaseKey(ushort vk)
+    {
+        uint flags = KEYEVENTF_KEYUP | (IsExtendedKey(vk) ? KEYEVENTF_EXTENDEDKEY : 0);
+        SendKey(vk, (ushort)MapVirtualKey(vk, 0), flags);
+        m_KeysDown.Remove(vk);
+    }
+
+    /// <summary>Lets go of a held button and any held key (headset disconnected, tracking lost, window gone) so nothing stays pressed.</summary>
+    public void ReleaseKeys() { foreach (var vk in new List<ushort>(m_KeysDown)) ReleaseKey(vk); }
+
     public void Release(string why)
     {
         if (!m_Left) return;

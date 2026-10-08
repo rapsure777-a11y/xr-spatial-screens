@@ -47,6 +47,10 @@ static class Program
         s.MouseDoubleClick += (o, e) => Write("double", e);
         s.MouseMove += (o, e) => { if (e.Button != MouseButtons.None) Write("move-held", e); };
         s.MouseWheel += (o, e) => File.AppendAllText(log, $"wheel {e.Delta} at client {e.X},{e.Y}\n");
+        f.KeyPreview = true;                                                      // keyboard events for the headset typing tests
+        f.KeyDown += (o, e) => File.AppendAllText(log, $"keydown {e.KeyCode} ctrl={e.Control} shift={e.Shift} alt={e.Alt}\n");
+        f.KeyUp += (o, e) => File.AppendAllText(log, $"keyup {e.KeyCode}\n");
+        f.KeyPress += (o, e) => File.AppendAllText(log, $"char '{e.KeyChar}' U+{(int)e.KeyChar:X4}\n");
         Application.Run(f);
     }
 }

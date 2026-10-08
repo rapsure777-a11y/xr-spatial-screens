@@ -26,6 +26,7 @@ using System.Threading;
 //     'A' stream u16, seq u32              frame shown (round-trip measurement)
 //     'P' stream u16, kind u8, u f32, v f32, wheel f32   pointer event on the stream's window (see InputInjector)
 //     'L' stream u16                       pointer lost: release anything held
+//     'K' stream u16, kind u8, code u32    key: kind 0 type the character (UTF-16 code), 1 key down, 2 key up (Windows virtual-key code); the window is brought to the front first
 static unsafe class Program
 {
     public const uint ListMagic = 0x4C535258, FrameMagic = 0x32535258, StatusMagic = 0x53535258;     // 'XRSL', 'XRS2', 'XRSS'
@@ -124,7 +125,7 @@ sealed unsafe class StreamState
     public void Dispose()
     {
         Ended = true;
-        Injector.Release("stream closed");
+        Injector.Release("stream closed"); Injector.ReleaseKeys();
         try { if (Capture != null && !Capture.HasExited) { Capture.StandardInput.Close(); if (!Capture.WaitForExit(500)) Capture.Kill(); } } catch { }
         try { if (Base != null) View.SafeMemoryMappedViewHandle.ReleasePointer(); Base = null; View?.Dispose(); Mmf?.Dispose(); } catch { }
     }
@@ -189,6 +190,7 @@ sealed unsafe class Session
                             break;
                         }
                     case 'L': { Fill(2); Find(BitConverter.ToUInt16(b, 0))?.Injector.Handle(InputInjector.Lost, 0, 0, 0); break; }
+                    case 'K': { Fill(7); Find(BitConverter.ToUInt16(b, 0))?.Injector.Key(b[2], BitConverter.ToUInt32(b, 3)); break; }
                     default: throw new InvalidDataException("unknown message " + b[0]);
                 }
             }
