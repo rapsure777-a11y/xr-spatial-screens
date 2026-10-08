@@ -145,6 +145,7 @@ namespace XrSpatial.Capture
             CapturableWindow best = null;
             foreach (var w in Windows)
             {
+                if (w.OtherDesktop) continue;                                  // Windows hides it from this desktop: nothing to capture
                 if (!string.IsNullOrEmpty(process) && !string.Equals(w.process, process, StringComparison.OrdinalIgnoreCase)) continue;
                 if (!string.IsNullOrEmpty(titleContains) && (w.title == null || w.title.IndexOf(titleContains, StringComparison.OrdinalIgnoreCase) < 0)) continue;
                 if (best == null || (long)w.w * w.h > (long)best.w * best.h) best = w;

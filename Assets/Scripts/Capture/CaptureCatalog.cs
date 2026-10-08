@@ -16,6 +16,9 @@ namespace XrSpatial.Capture
         public uint pid;
         public string process;
         public int x, y, w, h;
+        /// <summary>"normal", "minimized" (the host restores it when a stream opens) or "otherDesktop" (hidden by Windows on another virtual desktop: cannot be captured).</summary>
+        public string state = "normal";
+        public bool OtherDesktop => state == "otherDesktop";
         public override string ToString() => $"{process}: {title} ({w}x{h})";
     }
 

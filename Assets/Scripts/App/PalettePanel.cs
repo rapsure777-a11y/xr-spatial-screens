@@ -140,8 +140,13 @@ namespace XrSpatial.App
                 int idx = first + i;
                 if (idx >= m_WindowList.Count) break;
                 var w = m_WindowList[idx];
-                string label = $"{w.process}: {Short(w.title, 26)}";
-                m_Windows.Add(MakeBtn(new Vector2(20, y), new Vector2(W - 40, bh), () => label, () => { OnPickWindow?.Invoke(w); Tool.Say("Capturing " + w.process, 3f); ShowMain(); }, null));
+                string tag = w.state == "minimized" ? "  (minimized)" : w.OtherDesktop ? "  (other desktop)" : "";
+                string label = $"{w.process}: {Short(w.title, 22)}{tag}";
+                m_Windows.Add(MakeBtn(new Vector2(20, y), new Vector2(W - 40, bh), () => label, () =>
+                {
+                    if (w.OtherDesktop) { Tool.Say("That window is on another virtual desktop. Move it to this desktop on the PC first.", 6f); return; }
+                    OnPickWindow?.Invoke(w); Tool.Say("Capturing " + w.process, 3f); ShowMain();
+                }, null));
                 y -= bh + gap;
             }
             if (m_WindowList.Count == 0) m_Windows.Add(MakeBtn(new Vector2(20, y), new Vector2(W - 40, bh), () => m_Refreshing ? "Looking for windows..." : "No windows found (tap to retry)", RefreshWindows, null));
