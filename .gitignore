@@ -34,3 +34,6 @@ Assets/StreamingAssets/XrssCapture.meta
 # Test fixture (dotnet)
 Tools/ClickTest/bin/
 Tools/ClickTest/obj/
+
+# Unity/Gradle scratch
+/.utmp/
