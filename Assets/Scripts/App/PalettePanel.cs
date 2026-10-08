@@ -69,7 +69,7 @@ namespace XrSpatial.App
             Img("Back", m_Rect, new Vector2(0, 0), new Vector2(W, H), new Color(0.05f, 0.07f, 0.1f, 0.88f));
             m_Status = Txt("Status", m_Rect, new Vector2(20, H - 150), new Vector2(W - 40, 140), 26, TextAnchor.UpperLeft, new Color(0.85f, 0.95f, 1f));
 
-            float y = H - 170, bw = (W - 60) / 2f, bh = 78f, gap = 10f;            // 7 rows must fit inside the panel (the last button was below it before)
+            float y = H - 170, bw = (W - 60) / 2f, bh = 70f, gap = 8f;             // 8 rows must fit inside the panel (the last button was below it before)
             int col = 0;
             void Add(Func<string> text, Action action, Func<bool> active = null)
             {
@@ -90,6 +90,7 @@ namespace XrSpatial.App
             Add(() => "Reset crop", Tool.ResetSelectedCrop);
             Add(() => "Save layout", () => { Workspace.SaveNow(); Tool.Say("Layout saved", 2f); });
             Add(() => "Keyboard", () => OnToggleKeyboard?.Invoke());
+            if (RemoteHost.Active) Add(() => RemoteHost.SoundEnabled ? "PC sound: ON" : "PC sound: off", () => RemoteHost.SetSound(!RemoteHost.SoundEnabled), () => RemoteHost.SoundEnabled);
             Add(() => "Hide palette", () => SetVisible(false));
         }
 

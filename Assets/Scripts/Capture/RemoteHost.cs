@@ -20,7 +20,7 @@ namespace XrSpatial.Capture
     {
         public const string Address = "127.0.0.1";
         public const int Port = 5600;
-        const uint FrameMagic = 0x32535258, ListMagic = 0x4C535258, StatusMagic = 0x53535258;       // 'XRS2', 'XRSL', 'XRSS'
+        const uint FrameMagic = 0x32535258, ListMagic = 0x4C535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258;       // 'XRS2', 'XRSL', 'XRSS', 'XRSA'
 
         sealed class Stream
         {
@@ -59,6 +59,7 @@ namespace XrSpatial.Capture
         static void Run()
         {
             var hdr = new byte[24];
+            var audioBuf = new byte[4096];
             while (!s_Quit)
             {
                 try
@@ -68,6 +69,7 @@ namespace XrSpatial.Capture
                     var net = c.GetStream(); s_Net = net; Connected = true; State = "connected";
                     Debug.Log("[XrSpatial] remote: connected to the PC host");
                     RequestList();
+                    SendSound();
                     lock (s_Lock) foreach (var kv in s_Streams) { kv.Value.state = StreamState.Opening; SendOpen(kv.Key, kv.Value.hwnd); }     // streams wanted before the (re)connect
                     while (!s_Quit)
                     {
@@ -93,6 +95,14 @@ namespace XrSpatial.Capture
                             List<TaskCompletionSource<List<CapturableWindow>>> waiters;
                             lock (s_Lock) { s_Windows = list; waiters = new List<TaskCompletionSource<List<CapturableWindow>>>(s_ListWaiters); s_ListWaiters.Clear(); }
                             foreach (var t in waiters) t.TrySetResult(new List<CapturableWindow>(list));
+                        }
+                        else if (magic == AudioMagic)
+                        {
+                            Read(net, hdr, 12);
+                            int len = (int)BitConverter.ToUInt32(hdr, 0), rate = (int)BitConverter.ToUInt32(hdr, 4);
+                            if (len > audioBuf.Length) audioBuf = new byte[len];
+                            Read(net, audioBuf, len);
+                            if (SoundEnabled) RemoteAudio.Push(audioBuf, len, rate);
                         }
                         else if (magic == StatusMagic)
                         {
@@ -128,6 +138,11 @@ namespace XrSpatial.Capture
         public static CapturableWindow[] Windows { get { lock (s_Lock) return s_Windows; } }
 
         public static void RequestList() => Write(new[] { (byte)'W' });
+
+        /// <summary>Whether the PC's sound is wanted on the headset. Sent to the host (which starts or stops capturing it) and again after every reconnect.</summary>
+        public static bool SoundEnabled { get; private set; } = true;
+        public static void SetSound(bool on) { SoundEnabled = on; if (!on) RemoteAudio.Reset(); SendSound(); }
+        static void SendSound() => Write(new[] { (byte)'S', (byte)(SoundEnabled ? 1 : 0) });
 
         /// <summary>Asks the PC for its window list and completes when it arrives (or with the last known list after a few seconds).</summary>
         public static Task<List<CapturableWindow>> ListAsync()

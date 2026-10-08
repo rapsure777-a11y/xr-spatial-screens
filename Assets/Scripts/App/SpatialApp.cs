@@ -152,6 +152,7 @@ namespace XrSpatial.App
                 var remote = new GameObject("RemoteInputForwarder").AddComponent<RemoteInputForwarder>();
                 remote.transform.SetParent(XrOrigin, false);
                 remote.Tool = Tool;
+                PcAudioPlayer.Create(XrOrigin);                                       // the PC's sound through the headset
                 new GameObject("HeadsetKeyboard").AddComponent<HeadsetKeyboardForwarder>().transform.SetParent(XrOrigin, false);       // a keyboard connected to the Frame types into the last clicked window
             }
             if (Settings.showControlPanel) { Control = gameObject.AddComponent<ControlPanel>(); Control.App = this; }
