@@ -58,6 +58,7 @@ namespace XrSpatial.Capture
                     else { Array.Clear(data, 0, data.Length); return; }
                 }
                 double step = s_Rate / (double)outRate;
+                float gain = s_Gain;
                 for (int i = 0; i < frames; i++)
                 {
                     if (s_Count < 2) { s_Primed = false; Underruns++; Array.Clear(data, i * channels, (frames - i) * channels); return; }
@@ -65,6 +66,7 @@ namespace XrSpatial.Capture
                     float t = (float)s_Frac;
                     float l = s_Ring[a * 2] + (s_Ring[b * 2] - s_Ring[a * 2]) * t;
                     float r = s_Ring[a * 2 + 1] + (s_Ring[b * 2 + 1] - s_Ring[a * 2 + 1]) * t;
+                    if (gain != 1f) { l = Limit(l * gain); r = Limit(r * gain); }
                     data[i * channels] = l;
                     if (channels > 1) data[i * channels + 1] = r;
                     for (int c = 2; c < channels; c++) data[i * channels + c] = 0f;
@@ -75,5 +77,35 @@ namespace XrSpatial.Capture
         }
 
         public static void Reset() { lock (s_Lock) { s_Count = 0; s_Primed = false; s_Frac = 0; } }
+
+        // ------------------------------------------------------------------ volume
+
+        static readonly float[] GainSteps = { 0f, 0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 2.5f, 3f };
+        static volatile float s_Gain = 1f;
+        const string GainPref = "xrss.volume";
+
+        /// <summary>Volume multiplier applied to the PC's sound: 1 is the PC's own level, above 1 boosts it (with a soft limiter so loud peaks do not distort).</summary>
+        public static float Gain => s_Gain;
+
+        /// <summary>Restores the saved volume (main thread, at start-up).</summary>
+        public static void LoadGain() => s_Gain = Mathf.Clamp(PlayerPrefs.GetFloat(GainPref, 1f), 0f, 3f);
+
+        /// <summary>One step up or down the volume scale (0, 25, 50, 75, 100, 125, 150, 200, 250, 300 percent); remembered. Main thread only.</summary>
+        public static void StepGain(int direction)
+        {
+            int nearest = 0;
+            for (int i = 1; i < GainSteps.Length; i++) if (Mathf.Abs(GainSteps[i] - s_Gain) < Mathf.Abs(GainSteps[nearest] - s_Gain)) nearest = i;
+            s_Gain = GainSteps[Mathf.Clamp(nearest + direction, 0, GainSteps.Length - 1)];
+            PlayerPrefs.SetFloat(GainPref, s_Gain); PlayerPrefs.Save();
+        }
+
+        /// <summary>Soft knee: untouched up to 0.8, then compressed smoothly towards 1 so boosted peaks stay below clipping.</summary>
+        static float Limit(float x)
+        {
+            float a = Mathf.Abs(x);
+            if (a <= 0.8f) return x;
+            float y = 0.8f + 0.2f * (float)System.Math.Tanh((a - 0.8f) / 0.2f);
+            return x < 0f ? -y : y;
+        }
     }
 }

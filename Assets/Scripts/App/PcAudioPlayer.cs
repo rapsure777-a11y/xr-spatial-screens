@@ -26,6 +26,7 @@ namespace XrSpatial.App
         void Awake()
         {
             m_OutRate = AudioSettings.outputSampleRate;
+            RemoteAudio.LoadGain();                                                      // the volume chosen last time
             m_Source = GetComponent<AudioSource>();
             var clip = AudioClip.Create("pc-audio", 1024, 1, m_OutRate, false);
             m_Source.clip = clip; m_Source.loop = true; m_Source.spatialBlend = 0f; m_Source.volume = 1f; m_Source.playOnAwake = false;
