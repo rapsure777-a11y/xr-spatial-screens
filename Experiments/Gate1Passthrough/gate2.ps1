@@ -1,7 +1,7 @@
 ﻿# Gate 2 orchestration: capture one PC window, serve it as JPEG over loopback TCP, tunnel it to the Frame with `adb reverse`, launch the headset app.
 # usage: powershell -File gate2.ps1 -Action start|stop|log   [-Process notepad] [-Title text] [-Device 10.35.78.1:5555]
 # Prereq: Lepton Development running on the Frame, `adb connect <ip>:5555` works (use the IPv4 address, not the "frame" hostname).
-param([string]$Action = "start", [string]$Process = "notepad", [string]$Title = "", [long]$Hwnd = 0, [string]$Device = "10.35.78.1:5555", [int]$Port = 5600, [int]$MaxW = 1600, [int]$Fps = 60, [string]$Pkg = "com.gamebreaklabs.gate1passthrough")
+param([string]$Action = "start", [string]$Process = "notepad", [string]$Title = "", [long]$Hwnd = 0, [string]$Device = "10.35.78.1:5555", [int]$Port = 5600, [int]$MaxW = 2880, [int]$Fps = 60, [string]$Pkg = "com.gamebreaklabs.gate1passthrough")
 $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $adb = "C:\Users\fence\UnityAndroid\SDK\platform-tools\adb.exe"
 $cap = Join-Path $root "Tools\XrssCapture\publish\XrssCapture.exe"

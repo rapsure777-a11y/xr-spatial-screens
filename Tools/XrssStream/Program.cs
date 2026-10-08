@@ -11,7 +11,7 @@ using System.Threading;
 // Gate 2 proof of concept: reads the frames XrssCapture publishes in shared memory (FrameProtocol) and serves them as JPEG over TCP.
 // Listens on loopback only; the headset reaches it through `adb reverse tcp:PORT tcp:PORT`, so nothing is exposed to the network.
 //
-//   XrssStream --id ID [--port 5600] [--fps 30] [--maxw 1600] [--quality 75]
+//   XrssStream --id ID [--port 5600] [--fps 30] [--maxw 2880] [--quality 90]
 //
 // Wire format, little endian. Server -> client, per frame: 'XRSF' u32, jpegLength u32, width i32, height i32, seq u32, then the JPEG bytes.
 // Client -> server: the seq (u32) of each frame it has decoded and shown (used to measure round-trip latency).
@@ -26,7 +26,7 @@ static class Program
     {
         string Arg(string k, string d) { int i = Array.IndexOf(argv, "--" + k); return i >= 0 && i + 1 < argv.Length ? argv[i + 1] : d; }
         string id = Arg("id", "default");
-        int port = int.Parse(Arg("port", "5600")), fps = int.Parse(Arg("fps", "30")), maxW = int.Parse(Arg("maxw", "1600")), quality = int.Parse(Arg("quality", "75"));
+        int port = int.Parse(Arg("port", "5600")), fps = int.Parse(Arg("fps", "30")), maxW = int.Parse(Arg("maxw", "2880")), quality = int.Parse(Arg("quality", "90"));
 
         Console.WriteLine($"waiting for capture map XrssFrame-{id} ...");
         MemoryMappedFile mmf = null;
@@ -35,7 +35,7 @@ static class Program
 
         var listener = new TcpListener(IPAddress.Loopback, port);
         listener.Start();
-        Console.WriteLine($"listening on 127.0.0.1:{port} (jpeg q{quality}, max width {maxW}, {fps} fps cap)");
+        Console.WriteLine($"listening on 127.0.0.1:{port} (jpeg q{quality} 4:4:4, max width {maxW}, {fps} fps cap)");
         while (true)
         {
             using var client = listener.AcceptTcpClient();
