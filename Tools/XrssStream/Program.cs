@@ -1,8 +1,6 @@
-using System;
+﻿using System;
 using System.Diagnostics;
-using System.Drawing;
-using System.Drawing.Drawing2D;
-using System.Drawing.Imaging;
+using SkiaSharp;
 using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Linq;
@@ -29,9 +27,6 @@ static class Program
         string Arg(string k, string d) { int i = Array.IndexOf(argv, "--" + k); return i >= 0 && i + 1 < argv.Length ? argv[i + 1] : d; }
         string id = Arg("id", "default");
         int port = int.Parse(Arg("port", "5600")), fps = int.Parse(Arg("fps", "30")), maxW = int.Parse(Arg("maxw", "1600")), quality = int.Parse(Arg("quality", "75"));
-        var jpeg = ImageCodecInfo.GetImageEncoders().First(e => e.MimeType == "image/jpeg");
-        var encParams = new EncoderParameters(1);
-        encParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, (long)quality);
 
         Console.WriteLine($"waiting for capture map XrssFrame-{id} ...");
         MemoryMappedFile mmf = null;
@@ -46,12 +41,12 @@ static class Program
             using var client = listener.AcceptTcpClient();
             client.NoDelay = true;
             Console.WriteLine("client connected");
-            try { Serve(client, view, fps, maxW, jpeg, encParams); }
+            try { Serve(client, view, fps, maxW, quality); }
             catch (Exception e) { Console.WriteLine("client ended: " + e.Message); }
         }
     }
 
-    static unsafe void Serve(TcpClient client, MemoryMappedViewAccessor view, int fps, int maxW, ImageCodecInfo jpeg, EncoderParameters encParams)
+    static unsafe void Serve(TcpClient client, MemoryMappedViewAccessor view, int fps, int maxW, int quality)
     {
         var net = client.GetStream();
         var sentAt = new long[1 << 12];                         // seq -> Stopwatch ticks when the frame was fully written
@@ -88,59 +83,85 @@ static class Program
         }) { IsBackground = true };
         ackThread.Start();
 
-        uint lastCounter = 0, seq2 = 0;
+        // Frames are copied out of shared memory (a few ms) and encoded on up to Workers pool threads in parallel: one JPEG encode takes ~40 ms, so a single
+        // thread caps at ~25 fps. Finished frames are written in order; a frame that finishes after a newer one was already sent is dropped.
+        const int Workers = 3;
+        uint lastCounter = 0, seq2 = 0, lastWritten = 0;
         long minGap = Stopwatch.Frequency / fps, lastSend = 0, statStart = Stopwatch.GetTimestamp();
-        long frames = 0, bytes = 0, encTicks = 0, lastAck = 0, lastRtt = 0, lastMax = 0;
+        long frames = 0, bytes = 0, encTicks = 0, scaleTicks = 0, lastAck = 0, lastRtt = 0, lastW = 0, lastH = 0;
+        int inFlight = 0;
+        var writeLock = new object();
+        var pool = new System.Collections.Concurrent.ConcurrentBag<byte[]>();
         byte* basePtr = null;
         view.SafeMemoryMappedViewHandle.AcquirePointer(ref basePtr);
         try
         {
             while (client.Connected && !Volatile.Read(ref clientGone))
             {
-                uint counter = *(uint*)(basePtr + OffFrameCounter);
-                long now = Stopwatch.GetTimestamp();
-                if (counter == lastCounter || now - lastSend < minGap) { Thread.Sleep(2); continue; }
-                int w = *(int*)(basePtr + OffWidth), h = *(int*)(basePtr + OffHeight), stride = *(int*)(basePtr + OffStride);
-                int slot = *(int*)(basePtr + OffLatestSlot), cap = *(int*)(basePtr + 12);
-                if (w <= 0 || h <= 0) { Thread.Sleep(10); continue; }
-                long t0 = Stopwatch.GetTimestamp();
-                byte[] data;
-                using (var src = new Bitmap(w, h, PixelFormat.Format32bppRgb))
-                {
-                    var bd = src.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, PixelFormat.Format32bppRgb);
-                    byte* from = basePtr + HeaderSize + (long)slot * cap;
-                    for (int y = 0; y < h; y++) Buffer.MemoryCopy(from + (long)y * stride, (byte*)bd.Scan0 + (long)y * bd.Stride, bd.Stride, w * 4);
-                    src.UnlockBits(bd);
-                    if (*(uint*)(basePtr + OffFrameCounter) - counter > 1) continue;      // torn: the writer lapped us while copying
-                    int ow = Math.Min(w, maxW), oh = (int)((long)h * ow / w);
-                    using var scaled = ow == w ? null : new Bitmap(ow, oh, PixelFormat.Format32bppRgb);
-                    if (scaled != null)
-                    {
-                        using var g = Graphics.FromImage(scaled);
-                        g.InterpolationMode = InterpolationMode.HighQualityBilinear; g.DrawImage(src, 0, 0, ow, oh);
-                    }
-                    using var ms = new MemoryStream();
-                    (scaled ?? src).Save(ms, jpeg, encParams);
-                    data = ms.ToArray(); w = ow; h = oh;
-                }
-                encTicks += Stopwatch.GetTimestamp() - t0;
-                var header = new byte[20];
-                BitConverter.GetBytes(FrameMagic).CopyTo(header, 0); BitConverter.GetBytes((uint)data.Length).CopyTo(header, 4);
-                BitConverter.GetBytes(w).CopyTo(header, 8); BitConverter.GetBytes(h).CopyTo(header, 12); BitConverter.GetBytes(++seq2).CopyTo(header, 16);
-                Volatile.Write(ref sentAt[seq2 & (sentAt.Length - 1)], Stopwatch.GetTimestamp());
-                net.Write(header, 0, 20); net.Write(data, 0, data.Length);
-                lastCounter = counter; lastSend = now; frames++; bytes += data.Length;
-
                 long since = Stopwatch.GetTimestamp() - statStart;
                 if (since >= 3 * Stopwatch.Frequency)
                 {
                     double sec = (double)since / Stopwatch.Frequency, ms = 1000.0 / Stopwatch.Frequency;
-                    long acks = Interlocked.Read(ref ackCount), rtt = Interlocked.Read(ref rttTicksSum), max = Interlocked.Read(ref rttMaxTicks);
+                    long f = Interlocked.Exchange(ref frames, 0), b = Interlocked.Exchange(ref bytes, 0), et = Interlocked.Exchange(ref encTicks, 0), st = Interlocked.Exchange(ref scaleTicks, 0);
+                    long acks = Interlocked.Read(ref ackCount), rtt = Interlocked.Read(ref rttTicksSum), max = Interlocked.Exchange(ref rttMaxTicks, 0);
                     long dAck = acks - lastAck;
-                    Console.WriteLine($"sent {frames / sec:0.0} fps, {bytes * 8 / sec / 1e6:0.0} Mbit/s, avg {bytes / Math.Max(1, frames) / 1024} KB/frame, encode {encTicks * ms / Math.Max(1, frames):0.0} ms | acked {dAck / sec:0.0} fps, round trip avg {(dAck > 0 ? (rtt - lastRtt) * ms / dAck : 0):0} ms max {max * ms:0} ms | {w}x{h}");
-                    frames = 0; bytes = 0; encTicks = 0; lastAck = acks; lastRtt = rtt; Interlocked.Exchange(ref rttMaxTicks, 0); statStart = Stopwatch.GetTimestamp();
+                    if (f > 0 || dAck > 0)
+                        Console.WriteLine($"sent {f / sec:0.0} fps, {b * 8 / sec / 1e6:0.0} Mbit/s, avg {b / Math.Max(1, f) / 1024} KB/frame, encode {et * ms / Math.Max(1, f):0.0} ms (scale {st * ms / Math.Max(1, f):0.0}, {Workers} threads) | acked {dAck / sec:0.0} fps, round trip avg {(dAck > 0 ? (rtt - lastRtt) * ms / dAck : 0):0} ms max {max * ms:0} ms | {Interlocked.Read(ref lastW)}x{Interlocked.Read(ref lastH)}");
+                    lastAck = acks; lastRtt = rtt; statStart = Stopwatch.GetTimestamp();
                 }
+
+                uint counter = *(uint*)(basePtr + OffFrameCounter);
+                long now = Stopwatch.GetTimestamp();
+                if (counter == lastCounter || now - lastSend < minGap || Volatile.Read(ref inFlight) >= Workers) { Thread.Sleep(1); continue; }
+                int w = *(int*)(basePtr + OffWidth), h = *(int*)(basePtr + OffHeight), stride = *(int*)(basePtr + OffStride);
+                int slot = *(int*)(basePtr + OffLatestSlot), cap = *(int*)(basePtr + 12);
+                if (w <= 0 || h <= 0) { Thread.Sleep(10); continue; }
+
+                long t0 = Stopwatch.GetTimestamp();
+                int bytesNeeded = stride * h;
+                if (!pool.TryTake(out var buf) || buf.Length < bytesNeeded) buf = new byte[bytesNeeded];
+                fixed (byte* dstp = buf) Buffer.MemoryCopy(basePtr + HeaderSize + (long)slot * cap, dstp, buf.Length, bytesNeeded);
+                if (*(uint*)(basePtr + OffFrameCounter) - counter > 1) { pool.Add(buf); continue; }      // torn: the writer lapped us while copying
+                uint id = ++seq2; lastCounter = counter; lastSend = now;
+                Interlocked.Increment(ref inFlight);
+                int cw = w, ch = h, cstride = stride;
+                ThreadPool.UnsafeQueueUserWorkItem(_ =>
+                {
+                    try
+                    {
+                        // SkiaSharp (libjpeg-turbo): scale into the output size, then encode 4:4:4 so coloured text edges stay clean.
+                        int ow = Math.Min(cw, maxW), oh = (int)((long)ch * ow / cw);
+                        byte[] data;
+                        using (var dst = new SKBitmap(new SKImageInfo(ow, oh, SKColorType.Bgra8888, SKAlphaType.Opaque)))
+                        {
+                            fixed (byte* sp = buf)
+                            using (var srcPix = new SKPixmap(new SKImageInfo(cw, ch, SKColorType.Bgra8888, SKAlphaType.Opaque), (IntPtr)sp, cstride))
+                                srcPix.ScalePixels(dst.PeekPixels(), new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
+                            Interlocked.Add(ref scaleTicks, Stopwatch.GetTimestamp() - t0);
+                            using var enc = dst.PeekPixels().Encode(new SKJpegEncoderOptions(quality, SKJpegEncoderDownsample.Downsample444, SKJpegEncoderAlphaOption.Ignore));
+                            data = enc.ToArray();
+                        }
+                        Interlocked.Add(ref encTicks, Stopwatch.GetTimestamp() - t0);
+                        var header = new byte[20];
+                        BitConverter.GetBytes(FrameMagic).CopyTo(header, 0); BitConverter.GetBytes((uint)data.Length).CopyTo(header, 4);
+                        BitConverter.GetBytes(ow).CopyTo(header, 8); BitConverter.GetBytes(oh).CopyTo(header, 12); BitConverter.GetBytes(id).CopyTo(header, 16);
+                        lock (writeLock)
+                        {
+                            if (id > lastWritten)
+                            {
+                                Volatile.Write(ref sentAt[id & (sentAt.Length - 1)], Stopwatch.GetTimestamp());
+                                net.Write(header, 0, 20); net.Write(data, 0, data.Length);
+                                lastWritten = id;
+                                Interlocked.Increment(ref frames); Interlocked.Add(ref bytes, data.Length);
+                                Interlocked.Exchange(ref lastW, ow); Interlocked.Exchange(ref lastH, oh);
+                            }
+                        }
+                    }
+                    catch { Volatile.Write(ref clientGone, true); }
+                    finally { pool.Add(buf); Interlocked.Decrement(ref inFlight); }
+                }, null);
             }
+            while (Volatile.Read(ref inFlight) > 0) Thread.Sleep(5);              // let running encodes finish before the shared-memory view goes away
         }
         finally { view.SafeMemoryMappedViewHandle.ReleasePointer(); }
     }
