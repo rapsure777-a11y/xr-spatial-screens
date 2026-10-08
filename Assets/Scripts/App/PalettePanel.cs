@@ -91,6 +91,13 @@ namespace XrSpatial.App
             Add(() => "Save layout", () => { Workspace.SaveNow(); Tool.Say("Layout saved", 2f); });
             Add(() => "Keyboard", () => OnToggleKeyboard?.Invoke());
             if (RemoteHost.Active) Add(() => RemoteHost.SoundEnabled ? "PC sound: ON" : "PC sound: off", () => RemoteHost.SetSound(!RemoteHost.SoundEnabled), () => RemoteHost.SoundEnabled);
+            if (RemoteHost.Active) Add(() => "Reconnect screen", () =>
+            {
+                // a frozen or blocky screen: close its stream and open a fresh one (the selected screen, or the active source)
+                var src = Tool.Selected != null ? Tool.Selected.Source : Workspace.GetSource(Workspace.ActiveSourceId);
+                if (src == null) { Tool.Say("Select a screen first (point at it and press the trigger in edit mode).", 4f); return; }
+                src.Restart(); Tool.Say("Reconnecting " + (src.Def.label ?? src.Def.id), 3f);
+            });
             if (RemoteHost.Active)
             {
                 Add(() => $"Volume - ({Mathf.RoundToInt(RemoteAudio.Gain * 100f)}%)", () => RemoteAudio.StepGain(-1));

@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.XR;
 using XrSpatial.Capture;
+using XrSpatial.Core;
 using XrSpatial.Spatial;
 
 namespace XrSpatial.App
@@ -16,7 +17,7 @@ namespace XrSpatial.App
         public SpatialWorkspace Workspace;
         public Camera Cam;
 
-        const int MinWidth = 640, MaxWidth = 3840, Step = 160, OutOfViewFps = 2, FullFps = 60;
+        const int MinWidth = 1280, MaxWidth = 3840, Step = 160, OutOfViewFps = 2, FullFps = 60;
         const float Headroom = 1.5f, Hysteresis = 0.2f, Period = 0.5f;
 
         const float HoldLowerFor = 4f;
@@ -48,11 +49,13 @@ namespace XrSpatial.App
             {
                 ushort id = kv.Key;
                 // Smoothing: a higher need is honoured at once, a lower one only after it has lasted a few seconds, so quick head turns do not make the width flap.
-                if (!m_Held.TryGetValue(id, out var held) || kv.Value.width >= held.width || Time.unscaledTime - held.since > HoldLowerFor) held = (kv.Value.width, Time.unscaledTime);
-                else held = (held.width, held.since);
-                if (kv.Value.width >= held.width) held = (kv.Value.width, Time.unscaledTime);
+                // A screen that is out of view (need 0) keeps whatever it had.
+                float needW = kv.Value.visible ? kv.Value.width : 0f;
+                if (!m_Held.TryGetValue(id, out var held)) held = (needW, Time.unscaledTime);
+                else if (needW >= held.width) held = (needW, Time.unscaledTime);
+                else if (kv.Value.visible && Time.unscaledTime - held.since > HoldLowerFor) held = (needW, Time.unscaledTime);
                 m_Held[id] = held;
-                int width = Quantize(Mathf.Max(held.width, kv.Value.width));
+                int width = Quantize(held.width);
                 int fps = kv.Value.visible ? FullFps : OutOfViewFps;
                 m_Sent.TryGetValue(id, out var last);
                 bool fresh = last.epoch != RemoteHost.ConnectionEpoch;
@@ -70,26 +73,14 @@ namespace XrSpatial.App
             Summary = sb.ToString();
         }
 
-        /// <summary>The source width needed for a panel: its on-screen width in the eye image divided by the fraction of the source it shows. visible: any corner in front of the head and the outline overlapping the view.</summary>
+        /// <summary>The source width needed for a panel (see <see cref="StreamMath"/>) and whether it is in or near the view.</summary>
         void Measure(PanelView panel, int eyeWidth, out float srcWidth, out bool visible)
         {
-            float minX = float.MaxValue, maxX = float.MinValue, minY = float.MaxValue, maxY = float.MinValue;
-            bool anyFront = false;
-            foreach (var c in panel.Def.corners)
-            {
-                var v = Cam.WorldToViewportPoint(panel.transform.TransformPoint(c));
-                if (v.z <= 0.05f) continue;
-                anyFront = true;
-                minX = Mathf.Min(minX, v.x); maxX = Mathf.Max(maxX, v.x); minY = Mathf.Min(minY, v.y); maxY = Mathf.Max(maxY, v.y);
-            }
-            // a screen counts as in view up to one view-width beyond each edge, so a fast head turn finds it already running at full rate
-            visible = anyFront && maxX > -1.0f && minX < 2.0f && maxY > -0.6f && minY < 1.6f;
-            if (!anyFront) { srcWidth = 0f; return; }
-            float onScreenPx = Mathf.Clamp(maxX - minX, 0.02f, 3f) * eyeWidth;
-            float cropWidth = Mathf.Max(0.05f, panel.Def.crop.width);
-            srcWidth = onScreenPx / cropWidth * Headroom;
+            var corners = panel.Def.corners;
+            var world = new Vector3[corners.Length];
+            for (int i = 0; i < corners.Length; i++) world[i] = panel.transform.TransformPoint(corners[i]);
+            srcWidth = StreamMath.RequiredSourceWidth(Cam.transform.position, Cam.transform.forward, world, panel.Def.crop.width, eyeWidth, Headroom, out visible);
         }
 
-        static int Quantize(float w) => Mathf.Clamp(Mathf.CeilToInt(w / Step) * Step, MinWidth, MaxWidth);
-    }
+        static int Quantize(float w) => StreamMath.Quantize(w, Step, MinWidth, MaxWidth);    }
 }

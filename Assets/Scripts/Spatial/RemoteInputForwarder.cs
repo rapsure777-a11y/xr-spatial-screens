@@ -24,6 +24,7 @@ namespace XrSpatial.Spatial
         ushort m_Stream;
         Vector2 m_LastUv, m_LastSent;
         float m_NextWheel;
+        readonly PressAim m_Aim = new PressAim();
 
         static bool TryStream(PanelView panel, out ushort id)
         {
@@ -51,6 +52,11 @@ namespace XrSpatial.Spatial
             else uv = Tool.InteractUv;
             m_LastUv = uv;
             Vector2 src = panel.UvToSource(uv);
+
+            // Pulling the trigger nudges the laser: press where it rested a moment before, unless it was moved on purpose (see PressAim).
+            int key = panel.GetInstanceID();
+            if (s.triggerDown && !m_Left) src = m_Aim.Choose(Time.unscaledTime, src, key);
+            else if (!m_Left) m_Aim.Record(Time.unscaledTime, src, key);
 
             if (s.triggerDown && !m_Left) { RemoteHost.FocusStream = stream; RemoteHost.FocusLabel = panel.Source.Def.label ?? panel.Source.Def.id; RemoteHost.SendPointer(stream, LeftDown, src.x, src.y, 0); m_Left = true; m_Target = panel; m_Stream = stream; m_LastSent = src; LastAction = "left down"; }
             else if (m_Left && (s.triggerUp || !s.triggerHeld)) { RemoteHost.SendPointer(stream, LeftUp, src.x, src.y, 0); m_Left = false; m_Target = null; LastAction = "left up"; }
