@@ -14,7 +14,7 @@ using System.Threading;
 sealed class InputInjector
 {
     public const byte Move = 0, LeftDown = 1, LeftUp = 2, RightClick = 3, Wheel = 4, Lost = 5;
-    const int DeadZonePx = 6, DoubleClickSnapPx = 14;
+    const int DeadZonePx = 20, DoubleClickSnapPx = 24;           // sized for a laser held in the air: a few millimetres of wobble at arm's length is 10 to 20 window pixels
     const double DoubleClickSeconds = 0.5, ActivationTimeoutSeconds = 0.5;
 
     [StructLayout(LayoutKind.Sequential)] struct MOUSEINPUT { public int dx, dy; public uint mouseData, dwFlags, time; public UIntPtr dwExtraInfo; }
@@ -47,6 +47,8 @@ sealed class InputInjector
     int m_LastPressX = int.MinValue, m_LastPressY;
     long m_LastPressTicks;
     public string Last = "none";
+    /// <summary>Label for log lines (the window title).</summary>
+    public string Name = "";
     public int Refusals;
 
     public InputInjector(Func<IntPtr> window) { m_Window = window; }
@@ -125,9 +127,14 @@ sealed class InputInjector
                     Send(pos | LEFTDOWN, ax, ay, 0); m_Left = true; m_Dragging = false; m_PressX = m_LastX = px; m_PressY = m_LastY = py; Last = $"left down at {px},{py}";
                 }
                 else { Send(pos | RIGHTDOWN, ax, ay, 0); Send(pos | RIGHTUP, ax, ay, 0); Last = $"right click at {px},{py}"; }
-                Console.WriteLine("input: " + Last); break;
+                Console.WriteLine($"input: {Last} [{Name}]"); break;
             case LeftUp:
-                if (m_Left) { Send(pos | LEFTUP, ax, ay, 0); m_Left = false; m_Dragging = false; Last = $"left up at {px},{py}"; Console.WriteLine("input: " + Last); }
+                if (m_Left)
+                {
+                    // A release that stays inside the dead zone belongs to the press point: a click, not a tiny drag (VR laser wobble would otherwise turn clicks into drags).
+                    if (!m_Dragging && (px - m_PressX) * (px - m_PressX) + (py - m_PressY) * (py - m_PressY) <= DeadZonePx * DeadZonePx) { px = m_PressX; py = m_PressY; Abs(px, py, out ax, out ay); }
+                    Send(pos | LEFTUP, ax, ay, 0); m_Left = false; m_Dragging = false; Last = $"left up at {px},{py}"; Console.WriteLine($"input: {Last} [{Name}]");
+                }
                 break;
             case Wheel:
                 if (SpotBelongsTo(hwnd, px, py)) { Send(pos, ax, ay, 0); Send(WHEEL, 0, 0, (uint)(int)(Math.Sign(wheel) * 120)); }

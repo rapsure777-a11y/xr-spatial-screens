@@ -89,8 +89,11 @@ sealed unsafe class StreamState
     {
         Id = id; Hwnd = hwnd; MapName = $"h{port}-{id}";
         Injector = new InputInjector(() => new IntPtr(Hwnd));
+        var sb = new System.Text.StringBuilder(128); GetWindowText(new IntPtr(hwnd), sb, 128);
+        Injector.Name = $"stream {id}: {sb}";
     }
 
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)] static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);
     [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
     [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool IsWindow(IntPtr h);
     [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
