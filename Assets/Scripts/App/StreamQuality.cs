@@ -17,7 +17,7 @@ namespace XrSpatial.App
         public Camera Cam;
 
         const int MinWidth = 640, MaxWidth = 3840, Step = 160, OutOfViewFps = 2, FullFps = 60;
-        const float Headroom = 1.15f, Hysteresis = 0.2f, Period = 0.5f;
+        const float Headroom = 1.5f, Hysteresis = 0.2f, Period = 0.5f;
 
         const float HoldLowerFor = 4f;
         readonly Dictionary<ushort, (float width, float since)> m_Held = new Dictionary<ushort, (float width, float since)>();
@@ -82,7 +82,8 @@ namespace XrSpatial.App
                 anyFront = true;
                 minX = Mathf.Min(minX, v.x); maxX = Mathf.Max(maxX, v.x); minY = Mathf.Min(minY, v.y); maxY = Mathf.Max(maxY, v.y);
             }
-            visible = anyFront && maxX > -0.15f && minX < 1.15f && maxY > -0.15f && minY < 1.15f;
+            // a screen counts as in view up to one view-width beyond each edge, so a fast head turn finds it already running at full rate
+            visible = anyFront && maxX > -1.0f && minX < 2.0f && maxY > -0.6f && minY < 1.6f;
             if (!anyFront) { srcWidth = 0f; return; }
             float onScreenPx = Mathf.Clamp(maxX - minX, 0.02f, 3f) * eyeWidth;
             float cropWidth = Mathf.Max(0.05f, panel.Def.crop.width);

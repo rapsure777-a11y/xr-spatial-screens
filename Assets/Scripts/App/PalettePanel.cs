@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
@@ -26,7 +26,7 @@ namespace XrSpatial.App
         public bool Visible { get; private set; } = true;
 
         const float W = 560f, H = 820f, Scale = 0.00055f;          // 0.31 m x 0.45 m
-        const int WindowsPerPage = 6;
+        const int WindowsPerPage = 8;
         Canvas m_Canvas;
         RectTransform m_Rect;
         Text m_Status;
@@ -124,7 +124,7 @@ namespace XrSpatial.App
             if (!m_Refreshing)
             {
                 m_Refreshing = true;
-                CaptureCatalog.ListAsync().ContinueWith(t => { m_WindowList = t.Result; m_Refreshing = false; m_RebuildWindows = true; });
+                CaptureCatalog.ListAsync().ContinueWith(t => { m_WindowList = Sorted(t.Result); m_Refreshing = false; m_RebuildWindows = true; });
             }
             m_RebuildWindows = true;
         }
@@ -134,7 +134,7 @@ namespace XrSpatial.App
             m_RebuildWindows = false;
             foreach (var b in m_Windows) Destroy(b.rect.gameObject);
             m_Windows.Clear();
-            float bh = 70f, gap = 10f, y = H - 160 - bh;
+            float bh = 58f, gap = 6f, y = H - 160 - bh;
             int first = m_WindowPage * WindowsPerPage;
             for (int i = 0; i < WindowsPerPage; i++)
             {
@@ -151,16 +151,22 @@ namespace XrSpatial.App
                 y -= bh + gap;
             }
             if (m_WindowList.Count == 0) m_Windows.Add(MakeBtn(new Vector2(20, y), new Vector2(W - 40, bh), () => m_Refreshing ? "Looking for windows..." : "No windows found (tap to retry)", RefreshWindows, null));
-            float by = 20f, bw = (W - 80) / 3f;
+            float by = 20f, bw = (W - 100) / 4f;
+            int pages = Mathf.Max(1, Mathf.CeilToInt(m_WindowList.Count / (float)WindowsPerPage));
             m_Windows.Add(MakeBtn(new Vector2(20, by), new Vector2(bw, 80), () => "Back", ShowMain, null));
             m_Windows.Add(MakeBtn(new Vector2(40 + bw, by), new Vector2(bw, 80), () => "Refresh", RefreshWindows, null));
-            m_Windows.Add(MakeBtn(new Vector2(60 + 2 * bw, by), new Vector2(bw, 80), () => (m_WindowPage + 1) * WindowsPerPage < m_WindowList.Count ? "More >" : "Monitor 0", () =>
-            {
-                if ((m_WindowPage + 1) * WindowsPerPage < m_WindowList.Count) { m_WindowPage++; m_RebuildWindows = true; }
-                else { OnPickMonitor?.Invoke(0); ShowMain(); }
-            }, null));
+            m_Windows.Add(MakeBtn(new Vector2(60 + 2 * bw, by), new Vector2(bw, 80), () => "Monitor", () => { OnPickMonitor?.Invoke(0); ShowMain(); }, null));
+            m_Windows.Add(MakeBtn(new Vector2(80 + 3 * bw, by), new Vector2(bw, 80), () => $"Page {m_WindowPage + 1}/{pages}", () => { m_WindowPage = (m_WindowPage + 1) % pages; m_RebuildWindows = true; }, null));
         }
 
+        /// <summary>Normal windows first, then minimized ones (the PC restores them when picked), then windows on other virtual desktops; by program name within each group.</summary>
+        static List<CapturableWindow> Sorted(List<CapturableWindow> list)
+        {
+            int Rank(CapturableWindow w) => w.state == "minimized" ? 1 : w.OtherDesktop ? 2 : 0;
+            var s = new List<CapturableWindow>(list);
+            s.Sort((a, b) => { int r = Rank(a).CompareTo(Rank(b)); return r != 0 ? r : string.Compare(a.process, b.process, StringComparison.OrdinalIgnoreCase); });
+            return s;
+        }
         static string Short(string s, int n) => s.Length <= n ? s : s.Substring(0, n - 1) + "â€¦";
 
         // ------------------------------------------------------------------ building blocks

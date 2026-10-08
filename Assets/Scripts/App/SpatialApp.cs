@@ -153,6 +153,7 @@ namespace XrSpatial.App
                 remote.transform.SetParent(XrOrigin, false);
                 remote.Tool = Tool;
                 var quality = new GameObject("StreamQuality").AddComponent<StreamQuality>(); quality.Workspace = Workspace; quality.Cam = Cam;       // each stream gets only the pixels its screens need
+                new GameObject("PerfLog").AddComponent<PerfLog>();
                 PcAudioPlayer.Create(XrOrigin);                                       // the PC's sound through the headset
                 new GameObject("HeadsetKeyboard").AddComponent<HeadsetKeyboardForwarder>().transform.SetParent(XrOrigin, false);       // a keyboard connected to the Frame types into the last clicked window
             }
