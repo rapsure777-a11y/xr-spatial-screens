@@ -22,6 +22,7 @@ using System.Threading;
 //     audio  'XRSA' u32, pcmLength u32, sampleRate u32, channels u16 (2), pad u16, then 16-bit little-endian interleaved PCM  (16-byte header; the PC's output, in ~10 ms chunks)
 //   client -> server
 //     'S' on u8                            start (1) or stop (0) sending the PC's sound
+//     'R' stream u16, maxWidth u16, fps u8 quality for one stream: the widest picture to send and its frame-rate cap (out-of-view screens ask for a low rate)
 //     'W'                                  send me the window list
 //     'O' stream u16, hwnd i64             open a stream for that window
 //     'X' stream u16                       close a stream
@@ -75,6 +76,8 @@ sealed unsafe class StreamState
     public uint LastCounter, Seq, LastWritten;
     public long LastSend;
     public int InFlight;
+    /// <summary>Per-stream quality the headset asked for ('R'): the widest picture worth sending and the frame rate cap (a screen out of view asks for a low rate).</summary>
+    public volatile int MaxW = Program.MaxW, FpsCap = Program.Fps;
     public readonly long[] SentAt = new long[1 << 10];
     public readonly InputInjector Injector;
     // statistics since the last print
@@ -212,6 +215,12 @@ sealed unsafe class Session
                         }
                     case 'L': { Fill(2); Find(BitConverter.ToUInt16(b, 0))?.Injector.Handle(InputInjector.Lost, 0, 0, 0); break; }
                     case 'S': { Fill(1); SetAudio(b[0] != 0); break; }
+                    case 'R':
+                        {
+                            Fill(5); var s = Find(BitConverter.ToUInt16(b, 0));
+                            if (s != null) { s.MaxW = Math.Clamp((int)BitConverter.ToUInt16(b, 2), 320, 7680); s.FpsCap = Math.Clamp((int)b[4], 1, Program.Fps); }
+                            break;
+                        }
                     case 'K': { Fill(7); Find(BitConverter.ToUInt16(b, 0))?.Injector.Key(b[2], BitConverter.ToUInt32(b, 3)); break; }
                     default: throw new InvalidDataException("unknown message " + b[0]);
                 }
@@ -307,7 +316,7 @@ sealed unsafe class Session
                     }
                     if (s.HelperDied) { Console.WriteLine($"stream {s.Id}: window closed"); CloseEnded(s); continue; }
                     long now = Stopwatch.GetTimestamp();
-                    if (now - s.LastSend < minGap || Volatile.Read(ref m_InFlight) >= Workers || Volatile.Read(ref s.InFlight) >= 2) continue;
+                    if (now - s.LastSend < Stopwatch.Frequency / Math.Max(1, s.FpsCap) || Volatile.Read(ref m_InFlight) >= Workers || Volatile.Read(ref s.InFlight) >= 2) continue;
                     if (!s.HasNewFrame(out uint counter, out int w, out int h, out int stride, out int slot, out int cap)) continue;
                     if (Dispatch(s, counter, w, h, stride, slot, cap, now)) worked = true;
                 }
@@ -344,7 +353,7 @@ sealed unsafe class Session
             try
             {
                 // SkiaSharp (libjpeg-turbo): scale into the output size, then encode 4:4:4 so coloured text edges stay clean.
-                int ow = Math.Min(cw, Program.MaxW), oh = (int)((long)ch * ow / cw);
+                int ow = Math.Min(cw, s.MaxW), oh = (int)((long)ch * ow / cw);
                 byte[] data;
                 using (var dstBmp = new SKBitmap(new SKImageInfo(ow, oh, SKColorType.Bgra8888, SKAlphaType.Opaque)))
                 {
