@@ -109,7 +109,9 @@ namespace Gate1
                 else if (m_Held && (uv - m_LastSent).sqrMagnitude > 1e-8f) { m_Stream.SendPointer(Move, uv.x, uv.y, 0); m_LastSent = uv; }
                 else if (!m_Held && (uv - m_LastSent).sqrMagnitude > 4e-7f) { m_Stream.SendPointer(Move, uv.x, uv.y, 0); m_LastSent = uv; }
                 if (primaryDown && !m_Held) m_Stream.SendPointer(RightClick, uv.x, uv.y, 0);
-                float sy = m_StickL.ReadValue<Vector2>().y;
+                // scroll with either stick; the pointing hand's stick works the same as the other hand's (the right stick resizes only while the grip carries the panel)
+                float sl = m_StickL.ReadValue<Vector2>().y, sr = m_StickR.ReadValue<Vector2>().y;
+                float sy = Mathf.Abs(sr) > Mathf.Abs(sl) ? sr : sl;
                 if (Mathf.Abs(sy) > 0.5f && Time.unscaledTime > m_NextWheel) { m_Stream.SendPointer(Wheel, uv.x, uv.y, Mathf.Sign(sy)); m_NextWheel = Time.unscaledTime + 0.08f; }
             }
             if (m_Held && !trig) { m_Stream.SendPointer(LeftUp, m_Hit ? uv.x : m_LastSent.x, m_Hit ? uv.y : m_LastSent.y, 0); m_Held = false; }
