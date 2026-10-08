@@ -19,7 +19,9 @@ using System.Threading;
 //     frame  'XRS2' u32, jpegLength u32, width i32, height i32, seq u32, stream u16, pad u16, then the JPEG bytes
 //     list   'XRSL' u32, jsonLength u32, then UTF-8 JSON: the capturable windows (what XrssCapture --list prints)
 //     status 'XRSS' u32, stream u16, state u8 (0 ended, 1 opened, 2 failed), pad u8   (12 bytes)
+//     audio  'XRSA' u32, pcmLength u32, sampleRate u32, channels u16 (2), pad u16, then 16-bit little-endian interleaved PCM  (16-byte header; the PC's output, in ~10 ms chunks)
 //   client -> server
+//     'S' on u8                            start (1) or stop (0) sending the PC's sound
 //     'W'                                  send me the window list
 //     'O' stream u16, hwnd i64             open a stream for that window
 //     'X' stream u16                       close a stream
@@ -29,7 +31,7 @@ using System.Threading;
 //     'K' stream u16, kind u8, code u32    key: kind 0 type the character (UTF-16 code), 1 key down, 2 key up (Windows virtual-key code); the window is brought to the front first
 static unsafe class Program
 {
-    public const uint ListMagic = 0x4C535258, FrameMagic = 0x32535258, StatusMagic = 0x53535258;     // 'XRSL', 'XRS2', 'XRSS'
+    public const uint ListMagic = 0x4C535258, FrameMagic = 0x32535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258;     // 'XRSL', 'XRS2', 'XRSS', 'XRSA'
     public static string CapturePath;
     public static int Fps = 60, MaxW = 2880, Quality = 90;
 
@@ -209,6 +211,7 @@ sealed unsafe class Session
                             break;
                         }
                     case 'L': { Fill(2); Find(BitConverter.ToUInt16(b, 0))?.Injector.Handle(InputInjector.Lost, 0, 0, 0); break; }
+                    case 'S': { Fill(1); SetAudio(b[0] != 0); break; }
                     case 'K': { Fill(7); Find(BitConverter.ToUInt16(b, 0))?.Injector.Key(b[2], BitConverter.ToUInt32(b, 3)); break; }
                     default: throw new InvalidDataException("unknown message " + b[0]);
                 }
@@ -219,6 +222,31 @@ sealed unsafe class Session
     }
 
     StreamState Find(ushort id) { lock (m_StreamsLock) return m_Streams.TryGetValue(id, out var s) ? s : null; }
+
+    AudioSender m_Audio;
+    long m_AudioStatAt;
+
+    /// <summary>Starts or stops sending the PC's sound to the headset.</summary>
+    void SetAudio(bool on)
+    {
+        lock (m_StreamsLock)
+        {
+            if (on && m_Audio == null)
+            {
+                try
+                {
+                    m_Audio = new AudioSender((pcm, rate, ch) =>
+                    {
+                        var h = new byte[16]; BitConverter.GetBytes(Program.AudioMagic).CopyTo(h, 0); BitConverter.GetBytes((uint)pcm.Length).CopyTo(h, 4);
+                        BitConverter.GetBytes((uint)rate).CopyTo(h, 8); BitConverter.GetBytes((ushort)ch).CopyTo(h, 12);
+                        try { Send(h, pcm); } catch { m_Gone = true; }
+                    });
+                }
+                catch (Exception e) { Console.WriteLine("audio capture failed: " + e.Message); }
+            }
+            else if (!on && m_Audio != null) { m_Audio.Dispose(); m_Audio = null; Console.WriteLine("audio: stopped"); }
+        }
+    }
 
     void SendWindowList()
     {
@@ -284,12 +312,14 @@ sealed unsafe class Session
                     if (Dispatch(s, counter, w, h, stride, slot, cap, now)) worked = true;
                 }
                 PrintStats(list, ref statStart);
+                if (m_Audio != null && Stopwatch.GetTimestamp() - m_AudioStatAt > 5 * Stopwatch.Frequency) { m_AudioStatAt = Stopwatch.GetTimestamp(); Console.WriteLine(m_Audio.TakeStats()); }
                 if (!worked) Thread.Sleep(1);
             }
             while (Volatile.Read(ref m_InFlight) > 0) Thread.Sleep(5);
         }
         finally
         {
+            SetAudio(false);
             StreamState[] all; lock (m_StreamsLock) { all = new StreamState[m_Streams.Count]; m_Streams.Values.CopyTo(all, 0); m_Streams.Clear(); }
             foreach (var s in all) s.Dispose();
         }
