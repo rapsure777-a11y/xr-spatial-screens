@@ -14,7 +14,7 @@ using System.Threading;
 sealed class InputInjector
 {
     public const byte Move = 0, LeftDown = 1, LeftUp = 2, RightClick = 3, Wheel = 4, Lost = 5;
-    const int DeadZonePx = 20, DoubleClickSnapPx = 24;           // sized for a laser held in the air: a few millimetres of wobble at arm's length is 10 to 20 window pixels
+    const int DeadZonePx = 40, DoubleClickSnapPx = 24;           // sized for a laser held in the air: a few millimetres of wobble at arm's length is 10 to 20 window pixels
     const double DoubleClickSeconds = 0.5, ActivationTimeoutSeconds = 0.5;
 
     [StructLayout(LayoutKind.Sequential)] struct MOUSEINPUT { public int dx, dy; public uint mouseData, dwFlags, time; public UIntPtr dwExtraInfo; }
@@ -55,7 +55,10 @@ sealed class InputInjector
 
     static IntPtr Root(IntPtr h) { var r = GetAncestor(h, GA_ROOTOWNER); return r != IntPtr.Zero ? r : h; }
     static bool IsInFront(IntPtr t) { var fg = GetForegroundWindow(); return fg != IntPtr.Zero && Root(fg) == Root(t); }
-    static bool SpotBelongsTo(IntPtr t, int x, int y) { var top = WindowFromPoint(new POINT { x = x, y = y }); return top != IntPtr.Zero && Root(top) == Root(t); }
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, System.Text.StringBuilder s, int n);
+    static bool IsDesktop(IntPtr h) { var sb = new System.Text.StringBuilder(64); GetClassName(Root(h), sb, 64); var c = sb.ToString(); return c == "Progman" || c == "WorkerW"; }
+    // Some windows (Chromium) are skipped by hit-testing, so the desktop shows through: that is not another window covering the spot.
+    static bool SpotBelongsTo(IntPtr t, int x, int y) { var top = WindowFromPoint(new POINT { x = x, y = y }); return top != IntPtr.Zero && (Root(top) == Root(t) || (IsDesktop(top) && IsInFront(t))); }
 
     static void Activate(IntPtr h)
     {
