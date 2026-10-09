@@ -58,8 +58,15 @@ namespace XrSpatial.Capture
             }
         }
 
+        /// <summary>Labs test: a negative mip bias makes screens drawn smaller than their picture sharper (at the cost of some shimmer). 0 = off, the default and the previous behaviour. Not saved.</summary>
+        public static float MipBias;
+        public static readonly float[] MipBiasChoices = { 0f, -0.5f, -1f };
+        public static void NextMipBias() { int i = System.Array.IndexOf(MipBiasChoices, MipBias); MipBias = MipBiasChoices[(i + 1) % MipBiasChoices.Length]; }
+        public static string MipBiasName => MipBias == 0f ? "off" : MipBias > -0.75f ? "mild" : "strong";
+
         public void Tick()
         {
+            if (View && !Mathf.Approximately(View.mipMapBias, MipBias)) View.mipMapBias = MipBias;
             if (Closed && FrameCount > m_ClosedAtFrame) Closed = false;
             if (Backend == null)
             {
