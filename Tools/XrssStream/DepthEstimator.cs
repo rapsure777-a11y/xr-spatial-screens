@@ -15,15 +15,19 @@ static class DepthEstimator
     const int Size = 518;                                           // the model's input edge (a multiple of 14)
     static InferenceSession s_Session;
     static string s_InputName;
-    static bool s_Tried;
+    static bool s_Tried, s_V3;                                       // s_V3: Depth Anything 3 small (switched on by the file modelsSe_v3.flag), else Depth Anything V2 small
     static readonly object s_Lock = new object();
-    static readonly float[] s_Input = new float[3 * Size * Size];
+    static float[] s_Input = new float[3 * Size * Size];
 
     public static string Problem { get; private set; }
     public static bool Ready { get { EnsureLoaded(); return s_Session != null; } }
 
     static string FindModel()
     {
+        string baseDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XrSpatialScreens", "models");
+        string v3 = Path.Combine(baseDir, "da3", "model.onnx");
+        s_V3 = File.Exists(Path.Combine(baseDir, "use_v3.flag")) && File.Exists(v3);
+        if (s_V3) return v3;
         string env = Environment.GetEnvironmentVariable("XRSS_DEPTH_MODEL");
         if (!string.IsNullOrEmpty(env) && File.Exists(env)) return env;
         string a = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XrSpatialScreens", "models", "depth_anything_v2_small.onnx");
@@ -47,7 +51,7 @@ static class DepthEstimator
                 try { so.AppendExecutionProvider_DML(0); } catch (Exception e) { Console.WriteLine("depth: DirectML unavailable (" + e.Message + "), using the CPU"); }
                 s_Session = new InferenceSession(path, so);
                 foreach (var k in s_Session.InputMetadata.Keys) { s_InputName = k; break; }
-                Console.WriteLine("depth: model loaded from " + path);
+                Console.WriteLine("depth: model loaded from " + path + (s_V3 ? " (Depth Anything 3)" : " (Depth Anything V2)"));
             }
             catch (Exception e) { Problem = "depth model failed to load: " + e.Message; Console.WriteLine("depth: " + Problem); s_Session = null; }
         }
@@ -65,9 +69,14 @@ static class DepthEstimator
         if (!Ready) return null;
         ow = Math.Min(256, w); oh = Math.Max(16, (int)((long)h * ow / w)); if (oh > 256) { oh = 256; ow = Math.Max(16, (int)((long)w * oh / h)); }
         float[] raw = null;
+        int gw, gh;                                                  // the grid the model works on
+        if (s_V3) { int le = 336; gw = w >= h ? le / 14 * 14 : Math.Max(14, (int)Math.Round((double)w * le / h / 14) * 14); gh = w >= h ? Math.Max(14, (int)Math.Round((double)h * le / w / 14) * 14) : le / 14 * 14; }
+        else { gw = gh = Size; }                                     // V2 takes a square (the frame is squashed into it; the straight resample below undoes that)
         lock (s_Lock)
         {
-            using (var small = new SKBitmap(new SKImageInfo(Size, Size, SKColorType.Bgra8888, SKAlphaType.Opaque)))
+            int plane = gw * gh;
+            var input = s_Input.Length >= 3 * plane ? s_Input : new float[3 * plane];
+            using (var small = new SKBitmap(new SKImageInfo(gw, gh, SKColorType.Bgra8888, SKAlphaType.Opaque)))
             {
                 bool ok;
                 fixed (byte* sp = bgra)
@@ -75,28 +84,29 @@ static class DepthEstimator
                     ok = src.ScalePixels(small.PeekPixels(), new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
                 if (!ok) return null;
                 byte* p = (byte*)small.GetPixels();
-                int plane = Size * Size;
                 // ImageNet mean and std, RGB planes
                 const float mr = 0.485f, mg = 0.456f, mb = 0.406f, sr = 1f / 0.229f, sg = 1f / 0.224f, sb = 1f / 0.225f;
                 for (int i = 0; i < plane; i++)
                 {
-                    s_Input[i] = (p[i * 4 + 2] / 255f - mr) * sr; s_Input[plane + i] = (p[i * 4 + 1] / 255f - mg) * sg; s_Input[2 * plane + i] = (p[i * 4] / 255f - mb) * sb;
+                    input[i] = (p[i * 4 + 2] / 255f - mr) * sr; input[plane + i] = (p[i * 4 + 1] / 255f - mg) * sg; input[2 * plane + i] = (p[i * 4] / 255f - mb) * sb;
                 }
             }
-            var tensor = new DenseTensor<float>(s_Input.AsMemory(), new[] { 1, 3, Size, Size });
+            var tensor = new DenseTensor<float>(input.AsMemory(0, 3 * plane), s_V3 ? new[] { 1, 1, 3, gh, gw } : new[] { 1, 3, gh, gw });
             using var results = s_Session.Run(new[] { NamedOnnxValue.CreateFromTensor(s_InputName, tensor) });
-            foreach (var r in results) { raw = System.Linq.Enumerable.ToArray(r.AsEnumerable<float>()); break; }
+            foreach (var r in results) { if (s_V3 && r.Name != "predicted_depth") continue; raw = System.Linq.Enumerable.ToArray(r.AsEnumerable<float>()); break; }
+            if (raw == null || raw.Length < plane) return null;
+            if (s_V3) for (int i = 0; i < plane; i++) raw[i] = 1f / Math.Max(raw[i], 1e-3f);          // V3 gives depth (far is large); the panel wants near = large
         }
-        // resample to the output size (the model squashed the frame into a square, so a straight mapping undoes that), bilinear
+        // resample to the output size, bilinear
         var cur = new float[ow * oh];
         float mn = float.MaxValue, mx = float.MinValue;
         for (int y = 0; y < oh; y++)
         {
-            float fy = (y + 0.5f) / oh * Size - 0.5f; int y0 = Math.Clamp((int)MathF.Floor(fy), 0, Size - 1), y1 = Math.Min(y0 + 1, Size - 1); float ty = Math.Clamp(fy - y0, 0f, 1f);
+            float fy = (y + 0.5f) / oh * gh - 0.5f; int y0 = Math.Clamp((int)MathF.Floor(fy), 0, gh - 1), y1 = Math.Min(y0 + 1, gh - 1); float ty = Math.Clamp(fy - y0, 0f, 1f);
             for (int x = 0; x < ow; x++)
             {
-                float fx = (x + 0.5f) / ow * Size - 0.5f; int x0 = Math.Clamp((int)MathF.Floor(fx), 0, Size - 1), x1 = Math.Min(x0 + 1, Size - 1); float tx = Math.Clamp(fx - x0, 0f, 1f);
-                float v = (raw[y0 * Size + x0] * (1 - tx) + raw[y0 * Size + x1] * tx) * (1 - ty) + (raw[y1 * Size + x0] * (1 - tx) + raw[y1 * Size + x1] * tx) * ty;
+                float fx = (x + 0.5f) / ow * gw - 0.5f; int x0 = Math.Clamp((int)MathF.Floor(fx), 0, gw - 1), x1 = Math.Min(x0 + 1, gw - 1); float tx = Math.Clamp(fx - x0, 0f, 1f);
+                float v = (raw[y0 * gw + x0] * (1 - tx) + raw[y0 * gw + x1] * tx) * (1 - ty) + (raw[y1 * gw + x0] * (1 - tx) + raw[y1 * gw + x1] * tx) * ty;
                 cur[y * ow + x] = v; if (v < mn) mn = v; if (v > mx) mx = v;
             }
         }
