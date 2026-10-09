@@ -26,9 +26,14 @@ namespace XrSpatial.App
         readonly Dictionary<ushort, Sent> m_Sent = new Dictionary<ushort, Sent>();
         float m_Next;
         public string Summary { get; private set; } = "";
+        /// <summary>Test override (Labs): 0 = automatic (the default); otherwise every in-view stream is asked for exactly this many pixels of width. Not saved.</summary>
+        public static int ForcedWidth;
+        public static readonly int[] ForcedChoices = { 0, 1920, 2400, 2880, 3440, 3840 };
+        public static void NextForcedWidth() { int i = System.Array.IndexOf(ForcedChoices, ForcedWidth); ForcedWidth = ForcedChoices[(i + 1) % ForcedChoices.Length]; }
 
         void Update()
         {
+            if (ForcedWidth > 0) m_Next = 0f;                                          // a changed override applies at once
             if (!RemoteHost.Active || !RemoteHost.Connected || !Workspace || !Cam || Time.unscaledTime < m_Next) return;
             m_Next = Time.unscaledTime + Period;
             int eyeWidth = XRSettings.eyeTextureWidth > 0 ? XRSettings.eyeTextureWidth : 2160;
@@ -55,12 +60,12 @@ namespace XrSpatial.App
                 else if (needW >= held.width) held = (needW, Time.unscaledTime);
                 else if (kv.Value.visible && Time.unscaledTime - held.since > HoldLowerFor) held = (needW, Time.unscaledTime);
                 m_Held[id] = held;
-                int width = Quantize(held.width);
+                int width = ForcedWidth > 0 ? ForcedWidth : Quantize(held.width);
                 int fps = kv.Value.visible ? FullFps : OutOfViewFps;
                 m_Sent.TryGetValue(id, out var last);
                 bool fresh = last.epoch != RemoteHost.ConnectionEpoch;
                 if (!kv.Value.visible) width = fresh ? width : last.width;             // out of view: keep the width, just slow down
-                bool widthChanged = fresh || Mathf.Abs(width - last.width) > last.width * Hysteresis;
+                bool widthChanged = fresh || (ForcedWidth > 0 ? width != last.width : Mathf.Abs(width - last.width) > last.width * Hysteresis);
                 if (widthChanged || fps != last.fps || fresh)
                 {
                     int use = widthChanged ? width : last.width;
