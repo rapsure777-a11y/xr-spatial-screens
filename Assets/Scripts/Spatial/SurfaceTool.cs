@@ -50,7 +50,7 @@ namespace XrSpatial.Spatial
         readonly List<Vector3> m_Placed = new List<Vector3>();
         float m_MessageUntil;
 
-        enum Drag { None, Corner, Panel, Crop }
+        enum Drag { None, Corner, Panel, Crop, Tilt }
         Drag m_Drag;
         PanelView m_DragPanel;
         int m_DragCorner;
@@ -61,6 +61,12 @@ namespace XrSpatial.Spatial
         Vector3 m_GrabTip0, m_GrabCentroid0;
         float m_GrabScale = 1f, m_GrabPush;
         Vector2 m_CropA, m_CropB;
+        // edge tilt (grip on the top or bottom edge zone of a panel in edit mode)
+        int m_TiltEdge;
+        Vector3 m_TiltHand0, m_TiltNormal0;
+        float m_TiltAngle;
+        LineRenderer m_TiltCue;
+        Material m_TiltCueMat;
 
         LineRenderer m_Laser, m_Preview, m_CropBox;
         Transform m_Reticle;
@@ -77,6 +83,8 @@ namespace XrSpatial.Spatial
             m_Laser = NewLine("Laser", m_LaserMat, 0.0025f, 2);
             m_Preview = NewLine("PlacePreview", m_PreviewMat, 0.006f, 0);
             m_CropBox = NewLine("CropBox", m_PreviewMat, 0.005f, 4); m_CropBox.loop = true; m_CropBox.enabled = false;
+            m_TiltCueMat = Materials.NewUnlit(new Color(0.55f, 0.95f, 1f, 0.9f), true);
+            m_TiltCue = NewLine("TiltCue", m_TiltCueMat, 0.006f, 2); m_TiltCue.enabled = false;
             var r = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             Destroy(r.GetComponent<Collider>());
             r.name = "Reticle"; r.transform.SetParent(transform, false); r.transform.localScale = Vector3.one * 0.02f;
@@ -251,6 +259,7 @@ namespace XrSpatial.Spatial
             InteractLive = false; InteractPanel = null; InteractTracking = s.valid; InteractState = s;       // the forwarder sees fresh state every frame, never a stale hover
             if (!s.valid) { m_Laser.enabled = false; m_Reticle.gameObject.SetActive(false); return; }
             m_Laser.enabled = true; m_Reticle.gameObject.SetActive(true);
+            m_TiltCue.enabled = false;                                                     // shown again below while an edge tilt zone is hovered or dragged
 
             PointerOverUi = false; float uiDist = float.MaxValue;
             if (Ui != null && m_Drag == Drag.None) PointerOverUi = Ui.HandlePointer(s, out uiDist);
@@ -284,6 +293,7 @@ namespace XrSpatial.Spatial
             var ray = s.ray;
             if (m_Drag == Drag.Corner) { DragCorner(s); return; }
             if (m_Drag == Drag.Panel) { GrabPanel(s); return; }
+            if (m_Drag == Drag.Tilt) { TiltPanel(s); return; }
 
             // Hover: nearest corner (within a pick radius that grows with distance) or the nearest panel hit.
             PanelView hover = null; int hoverCorner = -1; float bestAlong = float.MaxValue; Vector2 hoverUv = default; float hoverDist = float.MaxValue;
@@ -316,7 +326,18 @@ namespace XrSpatial.Spatial
                 else if (hover) { Select(hover); Pointer.Haptic(0.2f, 0.03f); }
                 else Select(null);
             }
-            if (s.gripDown && hover)
+            int tiltZone = hover && hoverCorner < 0 ? PanelTilt.ZoneAt(hoverUv, QuadMath.Size(hover.Def.corners).y) : 0;
+            if (tiltZone != 0) ShowTiltCue(hover, tiltZone);
+            if (s.gripDown && hover && tiltZone != 0)
+            {
+                // top or bottom edge zone: tilt about the horizontal axis (the middle of the panel still does the free grab below)
+                Select(hover);
+                m_Drag = Drag.Tilt; m_DragPanel = hover; m_TiltEdge = tiltZone;
+                m_DragStart = (Vector3[])hover.Def.corners.Clone();
+                m_TiltHand0 = ray.origin; m_TiltNormal0 = QuadMath.FrontNormal(m_DragStart); m_TiltAngle = 0f;
+                Pointer.Haptic(0.3f, 0.05f);
+            }
+            else if (s.gripDown && hover)
             {
                 Select(hover);
                 m_Drag = Drag.Panel; m_DragPanel = hover;
@@ -357,6 +378,31 @@ namespace XrSpatial.Spatial
                 Workspace.Touch(m_DragPanel);
             }
             CancelDrag();
+        }
+
+        void ShowTiltCue(PanelView p, int edge)
+        {
+            var q = p.Def.corners;
+            Vector3 a = edge > 0 ? q[QuadMath.TL] : q[QuadMath.BL], b = edge > 0 ? q[QuadMath.TR] : q[QuadMath.BR];
+            Vector3 n = QuadMath.FrontNormal(q) * 0.006f;
+            m_TiltCue.SetPosition(0, Vector3.Lerp(a, b, 0.12f) + n); m_TiltCue.SetPosition(1, Vector3.Lerp(a, b, 0.88f) + n);
+            m_TiltCue.enabled = true;
+        }
+
+        void TiltPanel(PointerState s)
+        {
+            if (s.gripUp || !s.gripHeld || !m_DragPanel)
+            {
+                if (m_DragPanel) { m_DragPanel.Def.corners = QuadMath.Planarise(m_DragPanel.Def.corners); Workspace.Touch(m_DragPanel); }
+                CancelDrag(); return;
+            }
+            float halfH = QuadMath.Size(m_DragStart).y * 0.5f;
+            float pull = Vector3.Dot(s.ray.origin - m_TiltHand0, m_TiltNormal0);                    // hand travel towards the viewer (translation only, wrist angle does not matter)
+            float target = PanelTilt.AngleFromPull(pull, m_TiltEdge, halfH);
+            m_TiltAngle = Mathf.Lerp(m_TiltAngle, target, 1f - Mathf.Exp(-18f * Time.unscaledDeltaTime));
+            var q = PanelTilt.Rotate(m_DragStart, m_TiltAngle);
+            if (QuadMath.IsValidQuad(q, MinCornerDistance)) { m_DragPanel.Def.corners = q; m_DragPanel.Rebuild(); }
+            ShowTiltCue(m_DragPanel, m_TiltEdge);
         }
 
         void GrabPanel(PointerState s)

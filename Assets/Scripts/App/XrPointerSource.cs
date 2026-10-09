@@ -74,11 +74,27 @@ namespace XrSpatial.App
         }
 
         float m_NextDiag;
+        bool m_ExtLogged;
+
+        /// <summary>One-time log of what the OpenXR runtime offers (for controller render model support); read with adb logcat.</summary>
+        void LogRuntimeExtensions()
+        {
+            try
+            {
+                var all = UnityEngine.XR.OpenXR.OpenXRRuntime.GetAvailableExtensions();
+                var on = UnityEngine.XR.OpenXR.OpenXRRuntime.GetEnabledExtensions();
+                Debug.Log($"[XrSpatial] openxr runtime: {UnityEngine.XR.OpenXR.OpenXRRuntime.name} {UnityEngine.XR.OpenXR.OpenXRRuntime.version} api {UnityEngine.XR.OpenXR.OpenXRRuntime.apiVersion}; {all.Length} extensions available, {on.Length} enabled");
+                Debug.Log("[XrSpatial] openxr available: " + string.Join(" ", all));
+                Debug.Log("[XrSpatial] openxr enabled: " + string.Join(" ", on));
+            }
+            catch (System.Exception e) { Debug.Log("[XrSpatial] openxr extension query failed: " + e.Message); }
+        }
 
         /// <summary>Every 3 s, writes what the controllers are doing to the player log, so a headset session can be diagnosed afterwards without being in the headset.</summary>
         void Update()
         {
             if (Time.unscaledTime < m_NextDiag) return;
+            if (!m_ExtLogged) { m_ExtLogged = true; LogRuntimeExtensions(); }
             m_NextDiag = Time.unscaledTime + 3f;
             var sb = new System.Text.StringBuilder("[XrSpatial] xr-input:");
             foreach (var d in InputSystem.devices)

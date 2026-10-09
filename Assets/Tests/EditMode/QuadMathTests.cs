@@ -335,3 +335,48 @@ namespace XrSpatial.Tests
         }
     }
 }
+
+namespace XrSpatial.Tests
+{
+    public class PanelTiltTests
+    {
+        static Vector3[] Rect(float w, float h) => XrSpatial.Core.QuadMath.RectAt(new Vector3(0, 1.5f, 2f), Vector3.right, Vector3.up, w, h);
+
+        [Test]
+        public void Zones_TopBottomOnly_CornersAndMiddleFree()
+        {
+            Assert.AreEqual(1, XrSpatial.Core.PanelTilt.ZoneAt(new Vector2(0.5f, 0.98f), 1f));
+            Assert.AreEqual(-1, XrSpatial.Core.PanelTilt.ZoneAt(new Vector2(0.5f, 0.02f), 1f));
+            Assert.AreEqual(0, XrSpatial.Core.PanelTilt.ZoneAt(new Vector2(0.5f, 0.5f), 1f));
+            Assert.AreEqual(0, XrSpatial.Core.PanelTilt.ZoneAt(new Vector2(0.05f, 0.98f), 1f));
+            Assert.AreEqual(0, XrSpatial.Core.PanelTilt.ZoneAt(new Vector2(0.95f, 0.02f), 1f));
+        }
+
+        [Test]
+        public void Rotate_ZeroIsIdentity_TopMovesTowardViewer()
+        {
+            var q = Rect(1.6f, 0.9f);
+            var same = XrSpatial.Core.PanelTilt.Rotate(q, 0f);
+            for (int i = 0; i < 4; i++) Assert.AreEqual(0f, Vector3.Distance(q[i], same[i]), 1e-5f);
+            var n = XrSpatial.Core.QuadMath.FrontNormal(q);
+            var t = XrSpatial.Core.PanelTilt.Rotate(q, 30f * Mathf.Deg2Rad);
+            float top = Vector3.Dot(t[XrSpatial.Core.QuadMath.TL] - q[XrSpatial.Core.QuadMath.TL], n);
+            float bottom = Vector3.Dot(t[XrSpatial.Core.QuadMath.BL] - q[XrSpatial.Core.QuadMath.BL], n);
+            Assert.Greater(top, 0.05f);
+            Assert.Less(bottom, -0.05f);
+            Assert.AreEqual(0f, Vector3.Distance(XrSpatial.Core.QuadMath.Centroid(q), XrSpatial.Core.QuadMath.Centroid(t)), 1e-5f);
+            Assert.AreEqual(XrSpatial.Core.QuadMath.Size(q).x, XrSpatial.Core.QuadMath.Size(t).x, 1e-4f);
+            Assert.AreEqual(XrSpatial.Core.QuadMath.Size(q).y, XrSpatial.Core.QuadMath.Size(t).y, 1e-4f);
+        }
+
+        [Test]
+        public void AngleFromPull_SignsClampAndDeadZone()
+        {
+            Assert.AreEqual(0f, XrSpatial.Core.PanelTilt.AngleFromPull(0.003f, 1, 0.5f), 1e-6f);
+            Assert.Greater(XrSpatial.Core.PanelTilt.AngleFromPull(0.1f, 1, 0.5f), 0f);
+            Assert.Less(XrSpatial.Core.PanelTilt.AngleFromPull(0.1f, -1, 0.5f), 0f);
+            Assert.AreEqual(60f * Mathf.Deg2Rad, XrSpatial.Core.PanelTilt.AngleFromPull(5f, 1, 0.5f), 1e-4f);
+            Assert.AreEqual(-60f * Mathf.Deg2Rad, XrSpatial.Core.PanelTilt.AngleFromPull(-5f, 1, 0.5f), 1e-4f);
+        }
+    }
+}
