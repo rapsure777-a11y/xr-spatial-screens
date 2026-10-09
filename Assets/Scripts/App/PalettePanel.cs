@@ -26,7 +26,7 @@ namespace XrSpatial.App
         public bool Visible { get; private set; } = true;
 
         const float W = 560f, Scale = 0.00055f;
-        float H = 880f;                                              // 0.31 m x 0.48 m (the old 820 high panel needed about 850 for its 19 buttons, the last one hung below it); taller when the Labs row is shown
+        float H = 943f;                                              // 0.31 m x 0.48 m (the old 820 high panel needed about 850 for its 19 buttons, the last one hung below it); taller when the Labs row is shown
         const int WindowsPerPage = 8;
         Canvas m_Canvas;
         RectTransform m_Rect;
@@ -35,6 +35,7 @@ namespace XrSpatial.App
         readonly List<Btn> m_Windows = new List<Btn>();
         readonly List<Btn> m_Labs = new List<Btn>();
         readonly List<GameObject> m_LabsDecor = new List<GameObject>();
+        readonly List<(Text text, Func<string> label)> m_LabsLive = new List<(Text, Func<string>)>();
         Btn m_Drag;                                                                 // the slider being dragged (trigger held)
         bool m_LabsEnabled;                                                         // the Labs row is only built when depthlab.flag exists in the app data folder
         public Action OnAddDepthTest, OnRemoveDepthTest;
@@ -89,7 +90,7 @@ namespace XrSpatial.App
         void Build()
         {
             m_LabsEnabled = System.IO.File.Exists(System.IO.Path.Combine(Application.persistentDataPath, "depthlab.flag"));
-            if (m_LabsEnabled) H += 150f;
+            if (m_LabsEnabled) H += 190f;
             m_Font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             m_Canvas = gameObject.AddComponent<Canvas>();
             m_Canvas.renderMode = RenderMode.WorldSpace;
@@ -144,6 +145,8 @@ namespace XrSpatial.App
             Add(() => "Delete screen", Tool.DeleteSelected);
             Add(() => "Turn picture", Tool.RotateSelectedPicture);
             Add(() => "Fit picture", Tool.FitSelectedAspect);
+            Add(() => Tool.LockAspect ? "Lock aspect: ON" : "Lock aspect: off", Tool.ToggleLockAspect, () => Tool.LockAspect);
+            Add(() => "Snap sharpness", Tool.SnapSharpness);
 
             Section("CROP"); Row(2);
             Add(() => Tool.Mode == ToolMode.Crop ? "Cropping..." : "Crop", () => { if (Tool.Mode == ToolMode.Crop) Tool.SetIdle(); else Tool.BeginCrop(); }, () => Tool.Mode == ToolMode.Crop);
@@ -201,7 +204,7 @@ namespace XrSpatial.App
             foreach (var b in m_Labs) Destroy(b.rect.gameObject);
             m_Labs.Clear();
             foreach (var g in m_LabsDecor) Destroy(g);
-            m_LabsDecor.Clear();
+            m_LabsDecor.Clear(); m_LabsLive.Clear();
             foreach (var b in m_Main) b.rect.gameObject.SetActive(true);
             foreach (var g in m_MainDecor) g.SetActive(true);
         }
@@ -249,6 +252,12 @@ namespace XrSpatial.App
             m_Labs.Add(MakeBtn(new Vector2(Style.Margin, y - Style.ButtonH), new Vector2(full, Style.ButtonH), () => "Real windows: " + DepthProfiles.Name(DepthProfiles.Live), DepthProfiles.Next, () => DepthProfiles.Live != DepthProfiles.Profile.Off));
             y -= Style.ButtonH + 6;
             Note("Real windows only get a simple bend for now (no per-object depth yet). Turn Depth on above to see it.", 52);
+            {
+                // sizing readout for the selected screen (panel sizing experiment; temporary)
+                var rd = Txt("SizingReadout", m_Rect, new Vector2(Style.Margin + 2, y - 126), new Vector2(full - 4, 126), 18, TextAnchor.UpperLeft, Style.Text);
+                m_LabsDecor.Add(rd.gameObject); m_LabsLive.Add((rd, () => Tool.SizingReport(out string rt, out _) ? "SIZING  " + rt : "SIZING  " + rt));
+                y -= 126 + 6;
+            }
             m_Labs.Add(MakeBtn(new Vector2(Style.Margin, 38), new Vector2(full, 70), () => "Back", ShowMain, null));
         }
 
@@ -379,6 +388,7 @@ namespace XrSpatial.App
             m_Mode.text = mode;
             m_Status.text = $"{srcLine}\n{Tool.Message}";
             if (m_Page == Page.Main) foreach (var h in m_Headers) h.text.text = h.label();
+            else if (m_Page == Page.Labs) foreach (var h in m_LabsLive) h.text.text = h.label();
             float now = Time.unscaledTime;
             foreach (var b in Current)
             {

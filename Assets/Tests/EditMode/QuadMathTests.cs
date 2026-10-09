@@ -257,3 +257,62 @@ namespace XrSpatial.Tests
         }
     }
 }
+
+namespace XrSpatial.Tests
+{
+    public class PanelSizingTests
+    {
+        static Vector3[] Rect(float w, float h) => XrSpatial.Core.QuadMath.RectAt(new Vector3(0, 1.5f, 2f), Vector3.right, Vector3.up, w, h);
+
+        [Test]
+        public void LockedResize_KeepsAspect_AndOppositeCorner()
+        {
+            var q = Rect(1.6f, 0.9f);
+            // drag the bottom-right corner outwards and downwards by awkward amounts
+            var t = q[XrSpatial.Core.QuadMath.BR] + new Vector3(0.7f, -0.1f, 0f);
+            var r = XrSpatial.Core.PanelSizing.ResizeCornerLocked(q, XrSpatial.Core.QuadMath.BR, t, 16f / 9f);
+            var size = XrSpatial.Core.QuadMath.Size(r);
+            Assert.AreEqual(16f / 9f, size.x / size.y, 1e-3f);
+            Assert.AreEqual(q[XrSpatial.Core.QuadMath.TL].x, r[XrSpatial.Core.QuadMath.TL].x, 1e-4f);   // the anchor (opposite corner) did not move
+            Assert.AreEqual(q[XrSpatial.Core.QuadMath.TL].y, r[XrSpatial.Core.QuadMath.TL].y, 1e-4f);
+            Assert.Greater(size.x, 1.6f);
+        }
+
+        [Test]
+        public void LockedResize_CanShrink_AndStillKeepsAspect()
+        {
+            var q = Rect(1.6f, 0.9f);
+            var t = q[XrSpatial.Core.QuadMath.TR] + new Vector3(-0.8f, -0.3f, 0f);
+            var r = XrSpatial.Core.PanelSizing.ResizeCornerLocked(q, XrSpatial.Core.QuadMath.TR, t, 16f / 9f);
+            var size = XrSpatial.Core.QuadMath.Size(r);
+            Assert.AreEqual(16f / 9f, size.x / size.y, 1e-3f);
+            Assert.Less(size.x, 1.6f);
+        }
+
+        [Test]
+        public void Sharpness_PixelsPerDegreeMatchHeadset()
+        {
+            var s = XrSpatial.Core.PanelSizing.Compute(2880f, 1206f, 22f, 2f);
+            Assert.AreEqual(22f, s.sourcePpd, 0.5f);
+            Assert.AreEqual(2880f / 1206f, s.widthM / s.heightM, 1e-3f);
+        }
+
+        [Test]
+        public void Sharpness_SmallCropGivesSmallPanel()
+        {
+            var full = XrSpatial.Core.PanelSizing.Compute(3440f, 1440f, 22f, 2f);
+            var crop = XrSpatial.Core.PanelSizing.Compute(700f, 700f, 22f, 2f);
+            Assert.Less(crop.widthM, full.widthM * 0.3f);
+            Assert.AreEqual(1f, crop.widthM / crop.heightM, 1e-3f);
+        }
+
+        [Test]
+        public void WithSize_KeepsCentroidAndOrientation()
+        {
+            var q = Rect(1.6f, 0.9f);
+            var r = XrSpatial.Core.PanelSizing.WithSize(q, 0.8f, 0.45f);
+            Assert.AreEqual(0f, Vector3.Distance(XrSpatial.Core.QuadMath.Centroid(q), XrSpatial.Core.QuadMath.Centroid(r)), 1e-4f);
+            Assert.AreEqual(0.8f, XrSpatial.Core.QuadMath.Size(r).x, 1e-4f);
+        }
+    }
+}

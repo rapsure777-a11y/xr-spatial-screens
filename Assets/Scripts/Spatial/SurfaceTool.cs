@@ -41,6 +41,11 @@ namespace XrSpatial.Spatial
         public float MinCornerDistance = 0.03f;
         /// <summary>New screens drawn as a roughly rectangular quad are fitted to the picture's aspect ratio (shrunk inside the drawn area) so the picture is not stretched; deliberate trapezoids are left as drawn.</summary>
         public bool AutoFitAspect = true;
+        /// <summary>Panel sizing experiment. While on, dragging a corner keeps the picture's (or crop's) own aspect; off = the normal freeform corner drag.</summary>
+        public bool LockAspect;
+        /// <summary>Set by the app: the headset's display pixels per degree at the centre of view, and the head position in the same space as the panel corners.</summary>
+        public Func<float> HeadsetPpd;
+        public Func<Vector3> HeadPosition;
 
         readonly List<Vector3> m_Placed = new List<Vector3>();
         float m_MessageUntil;
@@ -171,6 +176,46 @@ namespace XrSpatial.Spatial
             Say("Fitted to the picture's shape", 2f);
         }
 
+        /// <summary>The aspect (width / height) of what the panel shows: the crop region of the source picture. False while there is no picture to measure.</summary>
+        static bool PanelAspect(PanelView p, out float aspect)
+        {
+            aspect = 0f;
+            var src = p ? p.Source : null;
+            if (src == null || !src.HasFrame) return false;
+            aspect = p.Def.crop.width * src.Aspect / Mathf.Max(0.001f, p.Def.crop.height);
+            return aspect > 0.05f;
+        }
+
+        /// <summary>Source pixels, panel size and angles for the selected panel, as one line (also used as the Labs readout).</summary>
+        public bool SizingReport(out string text, out PanelSizing.Sharpness snap)
+        {
+            text = ""; snap = default;
+            if (!Selected) { text = "Select a screen first"; return false; }
+            var src = Selected.Source;
+            if (src == null || !src.HasFrame) { text = "No picture yet to measure"; return false; }
+            var c = Selected.Def.crop;
+            float pw = c.width * src.Width, ph = c.height * src.Height;
+            float ppd = HeadsetPpd != null ? HeadsetPpd() : 20f;
+            var q = Selected.Def.corners;
+            float dist = HeadPosition != null ? Vector3.Distance(HeadPosition(), QuadMath.Centroid(q)) : PlaceDistance;
+            snap = PanelSizing.Compute(pw, ph, ppd, dist);
+            var size = QuadMath.Size(q);
+            float angW = 2f * Mathf.Atan(size.x * 0.5f / Mathf.Max(0.2f, dist)) * Mathf.Rad2Deg, angH = 2f * Mathf.Atan(size.y * 0.5f / Mathf.Max(0.2f, dist)) * Mathf.Rad2Deg;
+            text = $"Source {src.Width}x{src.Height}, shown {pw:0}x{ph:0}px. Panel now {size.x:0.00}x{size.y:0.00} m at {dist:0.0} m = {angW:0}x{angH:0} deg, {PanelSizing.CentrePpd(pw, size.x, dist):0} px/deg (headset {ppd:0}). Sharp size {snap.widthM:0.00}x{snap.heightM:0.00} m = {snap.angWidthDeg:0}x{snap.angHeightDeg:0} deg.";
+            return true;
+        }
+
+        /// <summary>Resizes the selected panel (about its centre, same plane and orientation) so its source pixels match the headset's pixels per degree. Nothing else changes.</summary>
+        public void SnapSharpness()
+        {
+            if (!SizingReport(out string text, out var snap)) { Say(text); return; }
+            Selected.Def.corners = PanelSizing.WithSize(Selected.Def.corners, snap.widthM, snap.heightM);
+            Workspace.Touch(Selected);
+            Say($"Sharp size {snap.widthM:0.00}x{snap.heightM:0.00} m, {snap.sourcePpd:0} px/deg" + (snap.clamped ? " (limited)" : "") + ". Details in Labs.", 8f);
+        }
+
+        public void ToggleLockAspect() { LockAspect = !LockAspect; Say(LockAspect ? "Aspect locked: corner drags keep the picture's shape" : "Freeform: corners move freely", 3f); }
+
         public void ResetSelectedCrop()
         {
             if (!Selected) return;
@@ -299,6 +344,7 @@ namespace XrSpatial.Spatial
             Vector3 n = Vector3.Cross(a - b, c - b);
             if (n.sqrMagnitude > 1e-8f) { n.Normalize(); target -= n * Vector3.Dot(target - b, n); }
             q[i] = target;
+            if (LockAspect && PanelAspect(m_DragPanel, out float lockAspect)) q = PanelSizing.ResizeCornerLocked(m_DragStart, i, ray.origin + ray.direction * m_DragDist + m_DragOffset, lockAspect);
             if (QuadMath.IsValidQuad(q, MinCornerDistance)) { m_DragPanel.Def.corners = q; m_DragPanel.Rebuild(); }
         }
 

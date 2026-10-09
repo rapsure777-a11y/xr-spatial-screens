@@ -135,6 +135,8 @@ namespace XrSpatial.App
             if (XrActive) Pointer = XrPointerSource.Create(XrOrigin, Cam);
             else { var dp = DesktopPointerSource.Create(Cam); Pointer = dp; dp.Blocker = p => Control != null && Control.Visible && Control.ContainsScreenPoint(p); }
             Tool.Pointer = Pointer;
+            Tool.HeadPosition = () => XrOrigin.InverseTransformPoint(Cam.transform.position);                    // same space as the panel corners
+            Tool.HeadsetPpd = HeadsetPixelsPerDegree;
 
             Palette = PalettePanel.Create(XrOrigin, Tool, Workspace, Pointer);
             Palette.OnAddPattern = () => AddPattern();
@@ -266,6 +268,15 @@ namespace XrSpatial.App
             var p = Workspace.AddSurface(Workspace.ActiveSourceId, q);
             Tool.Select(p);
             return p;
+        }
+
+        /// <summary>The headset's display pixels per degree at the centre of view: the eye render width times the projection's horizontal scale (pixels per radian at the centre).</summary>
+        float HeadsetPixelsPerDegree()
+        {
+            float w = UnityEngine.XR.XRSettings.eyeTextureWidth;
+            if (w < 16f) w = Cam.pixelWidth;
+            var proj = UnityEngine.XR.XRSettings.isDeviceActive ? Cam.GetStereoProjectionMatrix(Camera.StereoscopicEye.Left) : Cam.projectionMatrix;
+            return Mathf.Clamp(Mathf.Abs(proj[0, 0]) * w * 0.5f * Mathf.Deg2Rad, 8f, 80f);
         }
 
         // ------------------------------------------------------------------ Depth Lab test screen (experiment; removable, flat panels are never touched)
