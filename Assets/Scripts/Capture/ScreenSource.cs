@@ -67,6 +67,7 @@ namespace XrSpatial.Capture
                 if (!IsSynthetic && Time.realtimeSinceStartup > m_RetryAt) { m_RetryAt = Time.realtimeSinceStartup + 2f; Restart(); }
                 return;
             }
+            (Backend as NetworkBackend)?.TickDepth(Time.unscaledDeltaTime);                       // Depth Lab: does nothing unless AI depth is selected
             if (Backend.PollInto(ref m_Raw) && m_Raw)
             {
                 EnsureView(m_Raw.width, m_Raw.height);

@@ -20,12 +20,13 @@ namespace XrSpatial.Capture
     {
         public const string Address = "127.0.0.1";
         public const int Port = 5600;
-        const uint FrameMagic = 0x32535258, ListMagic = 0x4C535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258, LayoutMagic = 0x59535258;       // 'XRS2', 'XRSL', 'XRSS', 'XRSA', 'XRSY'
+        const uint FrameMagic = 0x32535258, ListMagic = 0x4C535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258, LayoutMagic = 0x59535258, DepthMagic = 0x44535258;       // 'XRS2', 'XRSL', 'XRSS', 'XRSA', 'XRSY', 'XRSD'
 
         sealed class Stream
         {
             public long hwnd; public StreamState state = StreamState.Opening;
             public byte[] latest; public int w, h; public uint seq; public long received;
+            public byte[] depth; public int dw, dh, depthSeq;                        // Depth Lab: the newest depth picture the PC sent (255 = near)
         }
 
         public static bool Active { get; private set; }
@@ -86,6 +87,18 @@ namespace XrSpatial.Capture
                                 if (s_Streams.TryGetValue(id, out var s)) { s.latest = data; s.w = w; s.h = h; s.seq = seq; s.received++; s.state = StreamState.Live; }
                             }
                             FramesReceived++;
+                        }
+                        else if (magic == DepthMagic)
+                        {
+                            Read(net, hdr, 12);
+                            int len = (int)BitConverter.ToUInt32(hdr, 0), dw = BitConverter.ToUInt16(hdr, 4), dh = BitConverter.ToUInt16(hdr, 6); ushort id = BitConverter.ToUInt16(hdr, 8);
+                            if (len < 0 || len > 4000000) throw new Exception("bad depth size");
+                            var data = new byte[len]; if (len > 0) Read(net, data, len);
+                            lock (s_Lock)
+                            {
+                                if (len == 0) DepthAvailable = false;                                          // this PC cannot make depth
+                                else { DepthAvailable = true; if (s_Streams.TryGetValue(id, out var s) && len == dw * dh) { s.depth = data; s.dw = dw; s.dh = dh; s.depthSeq++; } }
+                            }
                         }
                         else if (magic == ListMagic)
                         {
@@ -279,6 +292,26 @@ namespace XrSpatial.Capture
 
         /// <summary>Increases every time the connection to the host is (re)established.</summary>
         public static int ConnectionEpoch { get; private set; }
+
+        /// <summary>Whether the PC can make depth: null until it has answered, false when it has no model or GPU support.</summary>
+        public static bool? DepthAvailable { get; private set; }
+
+        /// <summary>Asks the PC to estimate depth for a stream at the given rate (0 = off, the default). Must be resent after a reconnect (<see cref="ConnectionEpoch"/>).</summary>
+        public static void RequestDepth(ushort id, int fps)
+        {
+            var m = new byte[4]; m[0] = (byte)'D'; BitConverter.GetBytes(id).CopyTo(m, 1); m[3] = (byte)Mathf.Clamp(fps, 0, 15);
+            Write(m);
+        }
+
+        /// <summary>The newest depth picture of a stream if it is newer than <paramref name="seen"/>.</summary>
+        public static bool TakeDepth(ushort id, ref int seen, out byte[] data, out int w, out int h)
+        {
+            lock (s_Lock)
+            {
+                if (s_Streams.TryGetValue(id, out var s) && s.depth != null && s.depthSeq != seen) { seen = s.depthSeq; data = s.depth; w = s.dw; h = s.dh; return true; }
+            }
+            data = null; w = h = 0; return false;
+        }
 
         public static void SendLost(ushort id)
         {

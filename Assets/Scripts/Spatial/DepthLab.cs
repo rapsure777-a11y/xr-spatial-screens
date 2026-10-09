@@ -25,9 +25,9 @@ namespace XrSpatial.Spatial
 
         public static void Set(bool enabled, float strength, float focus)
         {
-            Enabled = enabled; Strength = Mathf.Clamp01(strength); Focus = Mathf.Clamp01(focus); Version++;
+            Enabled = enabled; Strength = Mathf.Clamp01(strength); Focus = Mathf.Clamp01(focus); Version++; XrSpatial.Capture.DepthProfiles.MasterOn = enabled;
         }
-        public static void SetEnabled(bool on) { Enabled = on; Version++; }
+        public static void SetEnabled(bool on) { Enabled = on; Version++; XrSpatial.Capture.DepthProfiles.MasterOn = on; }
         public static void SetStrength(float s) { Strength = Mathf.Clamp01(s); Version++; }
         public static void SetFocus(float f) { Focus = Mathf.Clamp01(f); Version++; }
 

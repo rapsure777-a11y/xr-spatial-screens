@@ -8,23 +8,26 @@ namespace XrSpatial.Capture
     /// </summary>
     public static class DepthProfiles
     {
-        public enum Profile { Off, Curved, Dome, Tilt }
+        public enum Profile { Off, Ai, Curved, Dome, Tilt }
 
         /// <summary>The shape applied to live window and monitor sources; Off leaves them flat even when Depth is on.</summary>
         public static Profile Live = Profile.Off;
 
-        static readonly Texture2D[] s_Textures = new Texture2D[4];
+        static readonly Texture2D[] s_Textures = new Texture2D[5];
 
-        public static string Name(Profile p) => p == Profile.Curved ? "Curved (edges toward you)" : p == Profile.Dome ? "Dome (centre toward you)" : p == Profile.Tilt ? "Tilt (top far)" : "Off";
+        /// <summary>True while the Depth Lab master switch is on (set by DepthLab); the PC is only asked for depth when this and the AI profile are both on.</summary>
+        public static bool MasterOn;
 
-        public static void Next() => Live = (Profile)(((int)Live + 1) % 4);
+        public static string Name(Profile p) => p == Profile.Ai ? (RemoteHost.DepthAvailable == false ? "AI depth (PC cannot)" : "AI depth (from PC)") : p == Profile.Curved ? "Curved (edges toward you)" : p == Profile.Dome ? "Dome (centre toward you)" : p == Profile.Tilt ? "Tilt (top far)" : "Off";
+
+        public static void Next() => Live = (Profile)(((int)Live + 1) % 5);
 
         /// <summary>The depth texture for the current live profile, or null when Off. Built once per shape.</summary>
         public static Texture2D LiveTexture
         {
             get
             {
-                if (Live == Profile.Off) return null;
+                if (Live == Profile.Off || Live == Profile.Ai) return null;                  // AI depth comes from the PC per source (see NetworkBackend), not from a fixed shape
                 int i = (int)Live;
                 if (s_Textures[i]) return s_Textures[i];
                 const int w = 128, h = 72;
