@@ -26,7 +26,7 @@ namespace XrSpatial.Capture
         public string Status => Backend != null ? Backend.Status : "not started";
         /// <summary>The depth map of this source (Depth Lab), or null when the backend has none. Never touched while depth is off.</summary>
         bool IsSynthetic => Def.kind == "pattern" || Def.kind == "depthtest";                    // generated locally: never "closed", nothing to reconnect
-        public Texture2D DepthMap => (Backend as IDepthProvider)?.Depth;
+        public Texture2D DepthMap => (Backend as IDepthProvider)?.Depth ?? (IsSynthetic ? null : DepthProfiles.LiveTexture);
 
         readonly Func<CaptureRequest> m_Request;
         Texture2D m_Raw, m_Y, m_U, m_V;

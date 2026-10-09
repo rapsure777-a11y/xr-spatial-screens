@@ -246,7 +246,10 @@ namespace XrSpatial.App
             m_Labs.Add(MakeBtn(new Vector2(Style.Margin, y - Style.ButtonH), new Vector2(half, Style.ButtonH), () => "Add depth test", () => OnAddDepthTest?.Invoke(), null));
             m_Labs.Add(MakeBtn(new Vector2(Style.Margin + half + Style.ColGap, y - Style.ButtonH), new Vector2(half, Style.ButtonH), () => "Remove test", () => OnRemoveDepthTest?.Invoke(), null));
             y -= Style.ButtonH + 14;
-            Note("Pointing and clicking still use the flat panel, so at strong depth the picture can look a little offset from the laser. Text on a HUD can warp.", 100);
+            m_Labs.Add(MakeBtn(new Vector2(Style.Margin, y - Style.ButtonH), new Vector2(full, Style.ButtonH), () => "Real windows: " + DepthProfiles.Name(DepthProfiles.Live), DepthProfiles.Next, () => DepthProfiles.Live != DepthProfiles.Profile.Off));
+            y -= Style.ButtonH + 6;
+            Note("Real windows only get a simple bend for now (no per-object depth yet). Turn Depth on above to see it.", 52);
+            Note("The laser still points at the flat panel, so at strong depth the picture can look a little offset from it.", 76);
             m_Labs.Add(MakeBtn(new Vector2(Style.Margin, 38), new Vector2(full, 70), () => "Back", ShowMain, null));
         }
 
