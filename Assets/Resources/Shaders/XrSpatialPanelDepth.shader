@@ -72,6 +72,7 @@ Shader "XrSpatial/PanelDepth"
                 float2 src = float2(_Crop.x + p.x * _Crop.z, _Crop.y + (1.0 - p.y) * _Crop.w);
                 // a slightly blurred read (mip 1) keeps one noisy depth pixel from becoming a spike
                 float d = SAMPLE_TEXTURE2D_LOD(_DepthTex, sampler_DepthTex, src, 1.0).r;
+                d = saturate(lerp(d, d * d * (3.0 - 2.0 * d), _DepthParams.w));   // Pop: an S-curve that pulls mid depths apart, so objects separate from the background
                 float disp = clamp((d - _DepthParams.y) * _DepthParams.x, -_DepthParams.z, _DepthParams.z);
                 float3 pos = v.positionOS.xyz + _PanelNormal.xyz * disp;
                 o.positionCS = TransformObjectToHClip(pos);

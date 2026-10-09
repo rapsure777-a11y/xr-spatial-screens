@@ -70,7 +70,7 @@ static class DepthEstimator
         ow = Math.Min(256, w); oh = Math.Max(16, (int)((long)h * ow / w)); if (oh > 256) { oh = 256; ow = Math.Max(16, (int)((long)w * oh / h)); }
         float[] raw = null;
         int gw, gh;                                                  // the grid the model works on
-        if (s_V3) { int le = 336; gw = w >= h ? le / 14 * 14 : Math.Max(14, (int)Math.Round((double)w * le / h / 14) * 14); gh = w >= h ? Math.Max(14, (int)Math.Round((double)h * le / w / 14) * 14) : le / 14 * 14; }
+        if (s_V3) { int le = 504; gw = w >= h ? le / 14 * 14 : Math.Max(14, (int)Math.Round((double)w * le / h / 14) * 14); gh = w >= h ? Math.Max(14, (int)Math.Round((double)h * le / w / 14) * 14) : le / 14 * 14; }
         else { gw = gh = Size; }                                     // V2 takes a square (the frame is squashed into it; the straight resample below undoes that)
         lock (s_Lock)
         {
