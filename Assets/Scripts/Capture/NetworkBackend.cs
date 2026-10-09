@@ -65,12 +65,13 @@ namespace XrSpatial.Capture
             }
             if (m_DepthTarget != null && m_DepthCur != null && m_DepthTarget.Length == m_DepthCur.Length)
             {
-                float k = 1f - Mathf.Exp(-dt * 6f);                                                    // ease towards the newest estimate over about a fifth of a second
+                float k = 1f - Mathf.Exp(-dt * Mathf.Lerp(6f, 1.5f, DepthProfiles.Smoothing));                                                    // ease towards the newest estimate over about a fifth of a second
                 bool changed = false;
+                int dead = Mathf.RoundToInt(DepthProfiles.Smoothing * 14f);                                   // a surface only moves when its depth really changed by more than this (of 255)
                 for (int i = 0; i < m_DepthCur.Length; i++)
                 {
                     int diff = m_DepthTarget[i] - m_DepthCur[i];
-                    if (diff == 0) continue;
+                    if (diff == 0 || Mathf.Abs(diff) <= dead) continue;
                     int step = Mathf.RoundToInt(diff * k); if (step == 0) step = diff > 0 ? 1 : -1;
                     m_DepthCur[i] = (byte)(m_DepthCur[i] + step); changed = true;
                 }

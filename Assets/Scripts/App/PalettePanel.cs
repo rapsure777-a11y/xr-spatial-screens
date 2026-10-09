@@ -89,7 +89,7 @@ namespace XrSpatial.App
         void Build()
         {
             m_LabsEnabled = System.IO.File.Exists(System.IO.Path.Combine(Application.persistentDataPath, "depthlab.flag"));
-            if (m_LabsEnabled) H += 95f;
+            if (m_LabsEnabled) H += 150f;
             m_Font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             m_Canvas = gameObject.AddComponent<Canvas>();
             m_Canvas.renderMode = RenderMode.WorldSpace;
@@ -244,6 +244,10 @@ namespace XrSpatial.App
             m_Labs.Add(MakeSlider(new Vector2(Style.Margin, y - 66), new Vector2(full, 66), () => $"Pop  {Mathf.RoundToInt(DepthLab.Pop * 100f)}%", () => DepthLab.Pop, DepthLab.SetPop));
             y -= 66 + 4;
             Note("Pulls near objects away from the background. 0% = depth as the model gives it.", 28);
+            y -= 6;
+            m_Labs.Add(MakeSlider(new Vector2(Style.Margin, y - 66), new Vector2(full, 66), () => $"Smoothing  {Mathf.RoundToInt(DepthLab.Smoothing * 100f)}%", () => DepthLab.Smoothing, DepthLab.SetSmoothing));
+            y -= 66 + 4;
+            Note("Less warble, but depth reacts slower. 0% = quick and lively.", 28);
             y -= 10;
             float half = (full - Style.ColGap) / 2f;
             m_Labs.Add(MakeBtn(new Vector2(Style.Margin, y - Style.ButtonH), new Vector2(half, Style.ButtonH), () => "Add depth test", () => OnAddDepthTest?.Invoke(), null));
@@ -252,7 +256,6 @@ namespace XrSpatial.App
             m_Labs.Add(MakeBtn(new Vector2(Style.Margin, y - Style.ButtonH), new Vector2(full, Style.ButtonH), () => "Real windows: " + DepthProfiles.Name(DepthProfiles.Live), DepthProfiles.Next, () => DepthProfiles.Live != DepthProfiles.Profile.Off));
             y -= Style.ButtonH + 6;
             Note("Real windows only get a simple bend for now (no per-object depth yet). Turn Depth on above to see it.", 52);
-            Note("The laser still points at the flat panel, so at strong depth the picture can look a little offset from it.", 76);
             m_Labs.Add(MakeBtn(new Vector2(Style.Margin, 38), new Vector2(full, 70), () => "Back", ShowMain, null));
         }
 
