@@ -138,6 +138,8 @@ namespace XrSpatial.App
 
             Palette = PalettePanel.Create(XrOrigin, Tool, Workspace, Pointer);
             Palette.OnAddPattern = () => AddPattern();
+            Palette.OnAddDepthTest = AddDepthTest;
+            Palette.OnRemoveDepthTest = RemoveDepthTest;
             Palette.OnPickWindow = w => UseWindow(w);
             Palette.OnPickMonitor = i => AddMonitor(i);
             VirtualKeyboard = KeyboardPanel.Create(XrOrigin, Tool, Pointer);
@@ -266,6 +268,29 @@ namespace XrSpatial.App
             return p;
         }
 
+        // ------------------------------------------------------------------ Depth Lab test screen (experiment; removable, flat panels are never touched)
+
+        string m_ActiveBeforeDepthTest;
+
+        /// <summary>One screen in front of the head showing the generated strategy-game picture with its prepared depth map.</summary>
+        public void AddDepthTest()
+        {
+            if (Workspace.Layout.sources.Exists(s => s.kind == "depthtest")) { Tool.Say("The depth test screen is already here (use Remove test first).", 4f); return; }
+            m_ActiveBeforeDepthTest = Workspace.ActiveSourceId;
+            Workspace.AddSource(new SourceDef { kind = "depthtest", label = "Depth test" });
+            AddQuickScreen();
+            Tool.Say("Depth test screen added. Turn Depth on to see it in 2.5D.", 5f);
+        }
+
+        /// <summary>Deletes the depth test source and its screens, and gives the active-source role back to what it was.</summary>
+        public void RemoveDepthTest()
+        {
+            var ids = Workspace.Layout.sources.FindAll(s => s.kind == "depthtest").ConvertAll(s => s.id);
+            foreach (var id in ids) Workspace.RemoveSource(id);
+            if (ids.Count > 0 && m_ActiveBeforeDepthTest != null && Workspace.Layout.FindSource(m_ActiveBeforeDepthTest) != null) Workspace.ActiveSourceId = m_ActiveBeforeDepthTest;
+            Tool.Say(ids.Count > 0 ? "Depth test removed." : "No depth test screen to remove.", 3f);
+        }
+
         // ------------------------------------------------------------------ command line
 
         void ApplyCommandLine()
@@ -278,6 +303,18 @@ namespace XrSpatial.App
             if (layout != null) Workspace.LoadLayout(layout);
             if (Has("--xrss-ephemeral")) { Workspace.LoadLayout("ephemeral-" + Guid.NewGuid().ToString("N")); Workspace.AutoSave = false; }    // empty layout, nothing saved: for scripted tests
             if (Has("--xrss-pattern")) AddPattern();
+            if (Has("--xrss-depthtest"))                                         // Depth Lab test hook: --xrss-depthtest [--xrss-depth STRENGTH FOCUS] [--xrss-shift METRES]
+            {
+                Workspace.AutoSave = false;
+                AddDepthTest();
+                if (Arg("--xrss-depth") is string ds && float.TryParse(ds, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float dstr))
+                {
+                    float.TryParse(a[Array.IndexOf(a, "--xrss-depth") + 2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float dfoc);
+                    DepthLab.Set(true, dstr, dfoc);
+                }
+                if (Arg("--xrss-shift") is string sh && float.TryParse(sh, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float shift))
+                { XrOrigin.position += XrOrigin.right * shift; XrOrigin.Rotate(0f, -Mathf.Atan2(shift, 1.8f) * Mathf.Rad2Deg, 0f); }
+            }
             string proc = Arg("--xrss-process"), title = Arg("--xrss-title");
             if (proc != null || title != null) Workspace.AddSource(new SourceDef { kind = "window", processName = proc, titleContains = title, label = proc ?? title });
             string mon = Arg("--xrss-monitor");

@@ -25,19 +25,25 @@ namespace XrSpatial.App
         public Action OnToggleKeyboard;
         public bool Visible { get; private set; } = true;
 
-        const float W = 560f, H = 880f, Scale = 0.00055f;          // 0.31 m x 0.48 m (the old 820 high panel needed about 850 for its 19 buttons, the last one hung below it)
+        const float W = 560f, Scale = 0.00055f;
+        float H = 880f;                                              // 0.31 m x 0.48 m (the old 820 high panel needed about 850 for its 19 buttons, the last one hung below it); taller when the Labs row is shown
         const int WindowsPerPage = 8;
         Canvas m_Canvas;
         RectTransform m_Rect;
         Text m_Mode, m_Status;
         readonly List<Btn> m_Main = new List<Btn>();
         readonly List<Btn> m_Windows = new List<Btn>();
+        readonly List<Btn> m_Labs = new List<Btn>();
+        readonly List<GameObject> m_LabsDecor = new List<GameObject>();
+        Btn m_Drag;                                                                 // the slider being dragged (trigger held)
+        bool m_LabsEnabled;                                                         // the Labs row is only built when depthlab.flag exists in the app data folder
+        public Action OnAddDepthTest, OnRemoveDepthTest;
         readonly List<GameObject> m_MainDecor = new List<GameObject>();            // section headers and hairlines: shown with the main page only
         readonly List<(Text text, Func<string> label)> m_Headers = new List<(Text, Func<string>)>();
-        List<Btn> Current => m_Page == Page.Main ? m_Main : m_Windows;
+        List<Btn> Current => m_Page == Page.Main ? m_Main : m_Page == Page.Windows ? m_Windows : m_Labs;
         Btn m_Hover;
         Font m_Font;
-        enum Page { Main, Windows }
+        enum Page { Main, Windows, Labs }
         Page m_Page = Page.Main;
         List<CapturableWindow> m_WindowList = new List<CapturableWindow>();
         int m_WindowPage;
@@ -67,6 +73,7 @@ namespace XrSpatial.App
         {
             public RectTransform rect; public Image bg, bar; public Text label, detail; public Func<string> text, detailText; public Action action; public Func<bool> active, dim;
             public float pressedUntil;
+            public Image fill; public Func<float> value; public Action<float> setValue;      // sliders
         }
 
         public static PalettePanel Create(Transform parent, SurfaceTool tool, SpatialWorkspace ws, IPointerSource pointer)
@@ -81,6 +88,8 @@ namespace XrSpatial.App
 
         void Build()
         {
+            m_LabsEnabled = System.IO.File.Exists(System.IO.Path.Combine(Application.persistentDataPath, "depthlab.flag"));
+            if (m_LabsEnabled) H += 95f;
             m_Font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             m_Canvas = gameObject.AddComponent<Canvas>();
             m_Canvas.renderMode = RenderMode.WorldSpace;
@@ -156,6 +165,8 @@ namespace XrSpatial.App
             Add(() => "Save layout", () => { Workspace.SaveNow(); Tool.Say("Layout saved", 2f); });
             Add(() => "Keyboard", () => OnToggleKeyboard?.Invoke());
             Add(() => "Hide palette", () => SetVisible(false));
+
+            if (m_LabsEnabled) { Section("LABS  ·  experimental"); Row(2); Add(() => DepthLab.Enabled ? "Depth Lab: ON" : "Depth Lab...", ShowLabs, () => DepthLab.Enabled); }
         }
 
         Btn MakeBtn(Vector2 pos, Vector2 size, Func<string> text, Action action, Func<bool> active, Func<string> detail = null, Func<bool> dim = null)
@@ -184,11 +195,61 @@ namespace XrSpatial.App
 
         void ShowMain()
         {
-            m_Page = Page.Main;
+            m_Page = Page.Main; m_Drag = null;
             foreach (var b in m_Windows) Destroy(b.rect.gameObject);
             m_Windows.Clear();
+            foreach (var b in m_Labs) Destroy(b.rect.gameObject);
+            m_Labs.Clear();
+            foreach (var g in m_LabsDecor) Destroy(g);
+            m_LabsDecor.Clear();
             foreach (var b in m_Main) b.rect.gameObject.SetActive(true);
             foreach (var g in m_MainDecor) g.SetActive(true);
+        }
+
+        // ------------------------------------------------------------------ Depth Lab page (experimental, only reachable when depthlab.flag exists)
+
+        void ShowLabs()
+        {
+            m_Page = Page.Labs;
+            foreach (var b in m_Main) b.rect.gameObject.SetActive(false);
+            foreach (var g in m_MainDecor) g.SetActive(false);
+            float y = H - 12 - 28 - 66 - 4;
+            float full = W - 2 * Style.Margin;
+            void Note(string text, float height)
+            {
+                var t = Txt("Note", m_Rect, new Vector2(Style.Margin + 2, y - height), new Vector2(full - 4, height), 20, TextAnchor.UpperLeft, Style.TextDim);
+                t.text = text; m_LabsDecor.Add(t.gameObject); y -= height + 6;
+            }
+            var head = Txt("Header", m_Rect, new Vector2(Style.Margin + 2, y - Style.HeaderH), new Vector2(full, Style.HeaderH), 22, TextAnchor.LowerLeft, Style.TextDim);
+            head.fontStyle = FontStyle.Bold; head.text = "DEPTH LAB  ·  2.5D panels, off by default"; m_LabsDecor.Add(head.gameObject);
+            m_LabsDecor.Add(Img("Hairline", m_Rect, new Vector2(Style.Margin, y - Style.HeaderH), new Vector2(full, 2), Style.Hairline).gameObject);
+            y -= Style.HeaderH + 8;
+
+            m_Labs.Add(MakeBtn(new Vector2(Style.Margin, y - 66), new Vector2(full, 66), () => DepthLab.Enabled ? "Depth: ON  (tap for flat)" : "Depth: off  (flat, normal)", () => DepthLab.SetEnabled(!DepthLab.Enabled), () => DepthLab.Enabled));
+            y -= 66 + 14;
+            m_Labs.Add(MakeSlider(new Vector2(Style.Margin, y - 66), new Vector2(full, 66), () => $"Strength  {Mathf.RoundToInt(DepthLab.Strength * 100f)}%", () => DepthLab.Strength, DepthLab.SetStrength));
+            y -= 66 + 4;
+            Note("0% flat  ·  15 to 30% subtle  ·  100% exaggerated", 28);
+            y -= 6;
+            m_Labs.Add(MakeSlider(new Vector2(Style.Margin, y - 66), new Vector2(full, 66), () => $"Focus  {Mathf.RoundToInt(DepthLab.Focus * 100f)}%", () => DepthLab.Focus, DepthLab.SetFocus));
+            y -= 66 + 4;
+            Note("Which depth stays on the panel. Low: picture comes towards you. High: it sits behind a window.", 52);
+            y -= 10;
+            float half = (full - Style.ColGap) / 2f;
+            m_Labs.Add(MakeBtn(new Vector2(Style.Margin, y - Style.ButtonH), new Vector2(half, Style.ButtonH), () => "Add depth test", () => OnAddDepthTest?.Invoke(), null));
+            m_Labs.Add(MakeBtn(new Vector2(Style.Margin + half + Style.ColGap, y - Style.ButtonH), new Vector2(half, Style.ButtonH), () => "Remove test", () => OnRemoveDepthTest?.Invoke(), null));
+            y -= Style.ButtonH + 14;
+            Note("Pointing and clicking still use the flat panel, so at strong depth the picture can look a little offset from the laser. Text on a HUD can warp.", 100);
+            m_Labs.Add(MakeBtn(new Vector2(Style.Margin, 38), new Vector2(full, 70), () => "Back", ShowMain, null));
+        }
+
+        Btn MakeSlider(Vector2 pos, Vector2 size, Func<string> text, Func<float> get, Action<float> set)
+        {
+            var b = MakeBtn(pos, size, text, null, null);
+            b.value = get; b.setValue = set;
+            b.fill = Rounded(Img("Fill", b.rect, Vector2.zero, size, new Color(0.10f, 0.42f, 0.50f, 1f)));
+            b.fill.transform.SetSiblingIndex(0);                                                  // under the label and the on-bar
+            return b;
         }
 
         void RefreshWindows()
@@ -302,7 +363,7 @@ namespace XrSpatial.App
             if (!Visible) return;
             Place();
             if (m_Page == Page.Windows && m_RebuildWindows) BuildWindowButtons();
-            string mode = m_Page == Page.Windows ? "CHOOSE A WINDOW TO CAPTURE" : Tool.Mode == ToolMode.Place ? $"PLACE: point {Tool.PlacedCount + 1} of 4" : Tool.Mode == ToolMode.Crop ? "CROP: drag a box on a screen" : Tool.InteractMode ? "INTERACT" : "EDIT";
+            string mode = m_Page == Page.Windows ? "CHOOSE A WINDOW TO CAPTURE" : m_Page == Page.Labs ? "DEPTH LAB (EXPERIMENTAL)" : Tool.Mode == ToolMode.Place ? $"PLACE: point {Tool.PlacedCount + 1} of 4" : Tool.Mode == ToolMode.Crop ? "CROP: drag a box on a screen" : Tool.InteractMode ? "INTERACT" : "EDIT";
             var src = Workspace.GetSource(Workspace.ActiveSourceId);
             var def = Workspace.Layout.FindSource(Workspace.ActiveSourceId);
             string srcLine = def != null ? $"{(string.IsNullOrEmpty(def.label) ? def.id : def.label)}: {src?.Status}" : "no source: choose a window";
@@ -314,6 +375,7 @@ namespace XrSpatial.App
             {
                 b.label.text = b.text();
                 if (b.detail) b.detail.text = b.detailText();
+                if (b.fill) b.fill.rectTransform.sizeDelta = new Vector2(Mathf.Max(24f, b.rect.sizeDelta.x * Mathf.Clamp01(b.value())), b.rect.sizeDelta.y);
                 bool act = b.active != null && b.active();
                 bool dimmed = b.dim != null && b.dim();
                 b.bar.enabled = act;
@@ -361,6 +423,11 @@ namespace XrSpatial.App
             Vector3 world = s.ray.origin + s.ray.direction * d;
             Vector3 local = transform.InverseTransformPoint(world);           // already in canvas units: the canvas scale is part of this transform. Origin at the rect centre (default pivot)
             Vector2 p = new Vector2(local.x + m_Rect.pivot.x * W, local.y + m_Rect.pivot.y * H);
+            if (m_Drag != null)                                                // a slider being dragged follows the laser even if it strays off the bar, until the trigger is released
+            {
+                if (s.triggerHeld) m_Drag.setValue(Mathf.Round(Mathf.Clamp01((p.x - m_Drag.rect.anchoredPosition.x) / m_Drag.rect.sizeDelta.x) * 100f) / 100f);
+                else m_Drag = null;
+            }
             if (p.x < -20 || p.x > W + 20 || p.y < -20 || p.y > H + 20) return false;
             hitDistance = d;
             foreach (var b in Current)
@@ -369,7 +436,8 @@ namespace XrSpatial.App
                 var r = new Rect(b.rect.anchoredPosition - Vector2.one * Style.HitPad, b.rect.sizeDelta + Vector2.one * (2f * Style.HitPad));
                 if (r.Contains(p)) { m_Hover = b; break; }
             }
-            if (m_Hover != null && s.triggerDown) { m_Hover.pressedUntil = Time.unscaledTime + Style.PressSeconds; Pointer?.Haptic(0.4f, 0.04f); m_Hover.action?.Invoke(); }
+            if (m_Hover != null && s.triggerDown && m_Hover.setValue != null) { m_Drag = m_Hover; Pointer?.Haptic(0.3f, 0.03f); m_Drag.setValue(Mathf.Round(Mathf.Clamp01((p.x - m_Hover.rect.anchoredPosition.x) / m_Hover.rect.sizeDelta.x) * 100f) / 100f); }
+            else if (m_Hover != null && s.triggerDown) { m_Hover.pressedUntil = Time.unscaledTime + Style.PressSeconds; Pointer?.Haptic(0.4f, 0.04f); m_Hover.action?.Invoke(); }
             return true;
         }
     }
