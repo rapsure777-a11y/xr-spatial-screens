@@ -262,6 +262,9 @@ namespace XrSpatial.Tests
 {
     public class PanelSizingTests
     {
+        float m_Cap;
+        [SetUp] public void NoCap() { m_Cap = XrSpatial.Core.PanelSizing.SnapCapDegrees; XrSpatial.Core.PanelSizing.SnapCapDegrees = 0f; }
+        [TearDown] public void RestoreCap() { XrSpatial.Core.PanelSizing.SnapCapDegrees = m_Cap; }
         static Vector3[] Rect(float w, float h) => XrSpatial.Core.QuadMath.RectAt(new Vector3(0, 1.5f, 2f), Vector3.right, Vector3.up, w, h);
 
         [Test]
@@ -304,6 +307,22 @@ namespace XrSpatial.Tests
             var crop = XrSpatial.Core.PanelSizing.Compute(700f, 700f, 22f, 2f);
             Assert.Less(crop.widthM, full.widthM * 0.3f);
             Assert.AreEqual(1f, crop.widthM / crop.heightM, 1e-3f);
+        }
+
+        [Test]
+        public void Sharpness_CapLimitsAngularWidth()
+        {
+            float old = XrSpatial.Core.PanelSizing.SnapCapDegrees;
+            try
+            {
+                XrSpatial.Core.PanelSizing.SnapCapDegrees = 75f;
+                var s = XrSpatial.Core.PanelSizing.Compute(2880f, 1206f, 22f, 2f);
+                Assert.IsTrue(s.capped);
+                Assert.AreEqual(75f, s.angWidthDeg, 0.1f);
+                XrSpatial.Core.PanelSizing.SnapCapDegrees = 0f;
+                Assert.IsFalse(XrSpatial.Core.PanelSizing.Compute(2880f, 1206f, 22f, 2f).capped);
+            }
+            finally { XrSpatial.Core.PanelSizing.SnapCapDegrees = old; }
         }
 
         [Test]

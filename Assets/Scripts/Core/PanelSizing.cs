@@ -11,6 +11,10 @@ namespace XrSpatial.Core
     {
         /// <summary>The source pixels per degree to aim for, as a multiple of the headset's display pixels per degree. 1 = one source pixel per display pixel (no enlarging).</summary>
         public const float SourcePerDisplay = 1.0f;
+        /// <summary>Largest angular width Snap Sharpness may produce, in degrees (0 = no cap). Test setting from Labs; not saved.</summary>
+        public static float SnapCapDegrees = 75f;
+        public static readonly float[] SnapCapChoices = { 0f, 60f, 75f, 90f };
+        public static void NextSnapCap() { int i = System.Array.IndexOf(SnapCapChoices, SnapCapDegrees); SnapCapDegrees = SnapCapChoices[(i + 1) % SnapCapChoices.Length]; }
         public const float MinWidth = 0.10f, MaxWidth = 6f;
 
         /// <summary>The panel's right and up directions (unit), from its own edges, as QuadMath.FitAspect derives them.</summary>
@@ -56,7 +60,7 @@ namespace XrSpatial.Core
         public struct Sharpness
         {
             public float widthM, heightM, angWidthDeg, angHeightDeg, sourcePpd, headsetPpd;
-            public bool clamped;
+            public bool clamped, capped;
         }
 
         /// <summary>
@@ -69,6 +73,7 @@ namespace XrSpatial.Core
             pxW = Mathf.Max(1f, pxW); pxH = Mathf.Max(1f, pxH); distance = Mathf.Max(0.2f, distance);
             // matched at the panel's centre, where a flat panel face-on and the headset's flat-projected pixels agree: source pixels per unit of tan(angle) = display pixels per unit of tan(angle)
             float w = distance * pxW / (Mathf.Max(1f, headsetPpd) * SourcePerDisplay * Mathf.Rad2Deg);
+            if (SnapCapDegrees > 0f) { float capW = 2f * distance * Mathf.Tan(SnapCapDegrees * 0.5f * Mathf.Deg2Rad); if (w > capW) { w = capW; s.capped = true; } }
             float cl = Mathf.Clamp(w, MinWidth, MaxWidth);
             s.clamped = !Mathf.Approximately(cl, w); w = cl;
             float h = w * pxH / pxW;

@@ -211,7 +211,7 @@ namespace XrSpatial.Spatial
             if (!SizingReport(out string text, out var snap)) { Say(text); return; }
             Selected.Def.corners = PanelSizing.WithSize(Selected.Def.corners, snap.widthM, snap.heightM);
             Workspace.Touch(Selected);
-            Say($"Sharp size {snap.widthM:0.00}x{snap.heightM:0.00} m, {snap.sourcePpd:0} px/deg" + (snap.clamped ? " (limited)" : "") + ". Details in Labs.", 8f);
+            Say($"Sharp size {snap.widthM:0.00}x{snap.heightM:0.00} m, {snap.sourcePpd:0} px/deg" + (snap.capped ? $" (capped at {PanelSizing.SnapCapDegrees:0} deg)" : snap.clamped ? " (limited)" : "") + ". Details in Labs.", 8f);
         }
 
         public void ToggleLockAspect() { LockAspect = !LockAspect; Say(LockAspect ? "Aspect locked: corner drags keep the picture's shape" : "Freeform: corners move freely", 3f); }
