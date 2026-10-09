@@ -98,10 +98,46 @@ namespace XrSpatial.Spatial
         /// <summary>Points this panel at a new live source (after the source was replaced).</summary>
         public void Rebind(ScreenSource source) { Source = source; }
 
+        TextMesh m_ClosedLabel;
+        bool m_ClosedShown;
+
         void LateUpdate()
         {
             if (Source != null && Source.View) m_Material.SetTexture(MainTex, Source.View);
             else m_Material.SetTexture(MainTex, Texture2D.blackTexture);
+            bool closed = Source != null && Source.Closed;
+            if (closed != m_ClosedShown) { m_ClosedShown = closed; m_Material.SetColor(Tint, closed ? new Color(0.28f, 0.14f, 0.14f, 1f) : Color.white); }
+            if (closed) UpdateClosedLabel();
+            else if (m_ClosedLabel) m_ClosedLabel.gameObject.SetActive(false);
+        }
+
+        /// <summary>"Window closed" text centred on a dimmed panel, facing the viewer's side of the panel, sized from the panel's width.</summary>
+        void UpdateClosedLabel()
+        {
+            var q = Def.corners;
+            if (!m_ClosedLabel)
+            {
+                var go = new GameObject("ClosedLabel");
+                go.transform.SetParent(transform, false);
+                m_ClosedLabel = go.AddComponent<TextMesh>();
+                m_ClosedLabel.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                go.GetComponent<MeshRenderer>().sharedMaterial = m_ClosedLabel.font.material;
+                m_ClosedLabel.anchor = TextAnchor.MiddleCenter; m_ClosedLabel.alignment = TextAlignment.Center;
+                m_ClosedLabel.color = new Color(1f, 0.85f, 0.8f, 1f);
+                m_ClosedLabel.fontSize = 64; m_ClosedLabel.characterSize = 0.01f;
+                m_ClosedLabel.text = "Window closed\nwaiting for it to reopen";
+            }
+            m_ClosedLabel.gameObject.SetActive(true);
+            Vector3 centre = (q[0] + q[1] + q[2] + q[3]) * 0.25f;
+            Vector3 normal = Vector3.Cross(q[1] - q[0], q[3] - q[0]).normalized;
+            Vector3 up = (q[0] - q[3]).normalized;                       // corners run TL, TR, BR, BL: up is from BL to TL
+            float width = ((q[1] - q[0]).magnitude + (q[2] - q[3]).magnitude) * 0.5f;
+            var cam = Camera.main;
+            if (cam && Vector3.Dot(normal, transform.InverseTransformPoint(cam.transform.position) - centre) < 0f) normal = -normal;
+            var t = m_ClosedLabel.transform;
+            t.localPosition = centre + normal * 0.004f;
+            t.localRotation = Quaternion.LookRotation(-normal, up);
+            t.localScale = Vector3.one * Mathf.Clamp(width * 0.7f, 0.2f, 3f);
         }
 
         public void SetHighlight(PanelHighlight h, int hoverCorner = -1)
