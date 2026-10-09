@@ -58,7 +58,7 @@ static class DepthEstimator
     }
 
     /// <summary>Per-stream smoothing state: the previous depth picture and a slowly moving value range, so the result does not flicker from frame to frame.</summary>
-    public sealed class Smoother { public float[] Prev; public int W, H; public float Min, Max; public bool Init; }
+    public sealed class Smoother { public float[] Prev; public int W, H; public float Min, Max; public bool Init; public byte[] Thumb; }
 
     /// <summary>
     /// Depth for one BGRA frame as an 8-bit picture (255 = near) of at most 256 px wide, same aspect as the frame. Returns null on failure.
@@ -67,6 +67,7 @@ static class DepthEstimator
     {
         ow = oh = 0;
         if (!Ready) return null;
+        if (!Changed(bgra, w, h, stride, st)) return null;           // the picture is (nearly) the same as when depth was last made: keep that depth, no flicker and no GPU work
         ow = Math.Min(256, w); oh = Math.Max(16, (int)((long)h * ow / w)); if (oh > 256) { oh = 256; ow = Math.Max(16, (int)((long)w * oh / h)); }
         float[] raw = null;
         int gw, gh;                                                  // the grid the model works on
@@ -141,12 +142,33 @@ static class DepthEstimator
             {
                 // a deadband: a surface only moves when its depth really changed (small differences are model noise), and then it follows quickly
                 float diff = d - st.Prev[i];
-                d = Math.Abs(diff) < 0.04f ? st.Prev[i] : st.Prev[i] + diff * 0.6f;
+                d = Math.Abs(diff) < 0.06f ? st.Prev[i] : st.Prev[i] + diff * 0.4f;
             }
             st.Prev[i] = d;
             outb[i] = (byte)Math.Round(d * 255f);
         }
         return outb;
+    }
+
+    /// <summary>Compares a coarse grid of the frame with the one depth was last made from; small changes (a blinking cursor, a clock) do not count.</summary>
+    static bool Changed(byte[] bgra, int w, int h, int stride, Smoother st)
+    {
+        const int gx = 48, gy = 27;
+        var t = new byte[gx * gy];
+        for (int y = 0; y < gy; y++)
+            for (int x = 0; x < gx; x++)
+            {
+                int o = Math.Min(h - 1, (y * 2 + 1) * h / (gy * 2)) * stride + Math.Min(w - 1, (x * 2 + 1) * w / (gx * 2)) * 4;
+                t[y * gx + x] = (byte)((bgra[o] * 29 + bgra[o + 1] * 150 + bgra[o + 2] * 77) >> 8);
+            }
+        if (st.Thumb != null && st.Thumb.Length == t.Length)
+        {
+            int moved = 0;
+            for (int i = 0; i < t.Length; i++) if (Math.Abs(t[i] - st.Thumb[i]) > 12) moved++;
+            if (moved < 6) return false;                              // fewer than 6 of 1296 sample points changed visibly
+        }
+        st.Thumb = t;
+        return true;
     }
 
     static void Range(float[] v, out float lo, out float hi)

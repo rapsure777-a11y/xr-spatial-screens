@@ -8,6 +8,8 @@ namespace XrSpatial.Capture
     /// </summary>
     public static class DepthProfiles
     {
+        /// <summary>0 = AI depth follows the PC quickly, 1 = slow and ignores small changes (set from DepthLab).</summary>
+        public static float Smoothing = 0.4f;
         public enum Profile { Off, Ai, Curved, Dome, Tilt }
 
         /// <summary>The shape applied to live window and monitor sources; Off leaves them flat even when Depth is on.</summary>

@@ -18,6 +18,8 @@ namespace XrSpatial.Spatial
         public static float Focus = 0.50f;
         /// <summary>0 = depth as the model gives it, 1 = a strong S-curve that separates near objects from the background (the model's relief looks flat on some sources).</summary>
         public static float Pop = 0f;
+        /// <summary>0 = depth follows the PC quickly, 1 = slow and ignores small changes (less warble, more lag).</summary>
+        public static float Smoothing { get => XrSpatial.Capture.DepthProfiles.Smoothing; private set => XrSpatial.Capture.DepthProfiles.Smoothing = value; }
         /// <summary>Bumped on every change, so panels only push parameters when something changed.</summary>
         public static int Version { get; private set; }
 
@@ -32,6 +34,7 @@ namespace XrSpatial.Spatial
         public static void SetEnabled(bool on) { Enabled = on; Version++; XrSpatial.Capture.DepthProfiles.MasterOn = on; }
         public static void SetStrength(float s) { Strength = Mathf.Clamp01(s); Version++; }
         public static void SetFocus(float f) { Focus = Mathf.Clamp01(f); Version++; }
+        public static void SetSmoothing(float s) { Smoothing = Mathf.Clamp01(s); }
         public static void SetPop(float p) { Pop = Mathf.Clamp01(p); Version++; }
 
         /// <summary>Relief (metres between depth 0 and depth 1) for a panel of the given width, capped so the farthest displacement stays within <see cref="MaxDisplacement"/>.</summary>
