@@ -100,9 +100,26 @@ static class DepthEstimator
                 cur[y * ow + x] = v; if (v < mn) mn = v; if (v > mx) mx = v;
             }
         }
-        // a slowly moving range (so one odd frame does not rescale the whole scene) and a blend with the previous picture (so the surface does not shimmer)
-        if (!st.Init || st.W != ow || st.H != oh) { st.Init = true; st.W = ow; st.H = oh; st.Min = mn; st.Max = mx; st.Prev = null; }
-        else { st.Min = st.Min * 0.8f + mn * 0.2f; st.Max = st.Max * 0.8f + mx * 0.2f; }
+        // a 3x3 blur: one noisy depth pixel must not become a spike on the mesh
+        var blur = new float[cur.Length];
+        for (int y = 0; y < oh; y++)
+            for (int x = 0; x < ow; x++)
+            {
+                float sum = 0; int n = 0;
+                for (int dy = -1; dy <= 1; dy++)
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        int xx = x + dx, yy = y + dy;
+                        if (xx < 0 || yy < 0 || xx >= ow || yy >= oh) continue;
+                        sum += cur[yy * ow + xx]; n++;
+                    }
+                blur[y * ow + x] = sum / n;
+            }
+        cur = blur;
+        // the value range is the 2nd to 98th percentile (a few stray pixels must not rescale the whole scene) and it moves slowly, so the scene does not breathe
+        Range(cur, out float lo, out float hi);
+        if (!st.Init || st.W != ow || st.H != oh) { st.Init = true; st.W = ow; st.H = oh; st.Min = lo; st.Max = hi; st.Prev = null; }
+        else { st.Min = st.Min * 0.92f + lo * 0.08f; st.Max = st.Max * 0.92f + hi * 0.08f; }
         float range = Math.Max(1e-4f, st.Max - st.Min);
         var outb = new byte[ow * oh];
         bool blend = st.Prev != null;
@@ -110,10 +127,31 @@ static class DepthEstimator
         for (int i = 0; i < cur.Length; i++)
         {
             float d = Math.Clamp((cur[i] - st.Min) / range, 0f, 1f);
-            if (blend) d = st.Prev[i] * 0.5f + d * 0.5f;
+            if (blend)
+            {
+                // a deadband: a surface only moves when its depth really changed (small differences are model noise), and then it follows quickly
+                float diff = d - st.Prev[i];
+                d = Math.Abs(diff) < 0.04f ? st.Prev[i] : st.Prev[i] + diff * 0.6f;
+            }
             st.Prev[i] = d;
             outb[i] = (byte)Math.Round(d * 255f);
         }
         return outb;
+    }
+
+    static void Range(float[] v, out float lo, out float hi)
+    {
+        float mn = float.MaxValue, mx = float.MinValue;
+        foreach (float f in v) { if (f < mn) mn = f; if (f > mx) mx = f; }
+        var hist = new int[256]; float scale = 255f / Math.Max(1e-6f, mx - mn);
+        foreach (float f in v) hist[Math.Clamp((int)((f - mn) * scale), 0, 255)]++;
+        int a = (int)(v.Length * 0.02f), b = (int)(v.Length * 0.98f), acc = 0; lo = mn; hi = mx;
+        bool gotLo = false;
+        for (int i = 0; i < 256; i++)
+        {
+            acc += hist[i];
+            if (!gotLo && acc >= a) { lo = mn + i / scale; gotLo = true; }
+            if (acc >= b) { hi = mn + (i + 1) / scale; break; }
+        }
     }
 }
