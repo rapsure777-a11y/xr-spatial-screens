@@ -278,7 +278,10 @@ namespace XrSpatial.App
             if (Workspace.Layout.sources.Exists(s => s.kind == "depthtest")) { Tool.Say("The depth test screen is already here (use Remove test first).", 4f); return; }
             m_ActiveBeforeDepthTest = Workspace.ActiveSourceId;
             Workspace.AddSource(new SourceDef { kind = "depthtest", label = "Depth test" });
-            AddQuickScreen();
+            var dsrc = Workspace.GetSource(Workspace.ActiveSourceId);
+            float daspect = dsrc?.Backend != null && dsrc.Backend.Height > 0 ? (float)dsrc.Backend.Width / dsrc.Backend.Height : 16f / 9f;      // the picture may not be 16:9 (a real screenshot)
+            var dq = QuadMath.RectInFront(XrOrigin.InverseTransformPoint(Cam.transform.position), XrOrigin.InverseTransformDirection(Cam.transform.forward), Vector3.up, 1.8f, 2.0f, daspect);
+            Tool.Select(Workspace.AddSurface(Workspace.ActiveSourceId, dq));
             Tool.Say("Depth test screen added. Turn Depth on to see it in 2.5D.", 5f);
         }
 
