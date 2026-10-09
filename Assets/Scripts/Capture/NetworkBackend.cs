@@ -10,7 +10,7 @@ namespace XrSpatial.Capture
     /// took ~80% of it with three large windows). Elsewhere (editor) it falls back to Texture2D.LoadImage. Each shown frame is acknowledged so the host can measure the round trip.
     /// Disposing closes the stream.
     /// </summary>
-    public sealed class NetworkBackend : ICaptureBackend, IYuvBackend
+    public sealed class NetworkBackend : ICaptureBackend, IYuvBackend, IDepthProvider
     {
         static double s_UploadMsSum; static int s_UploadCount; static float s_LogAt;
         public readonly ushort StreamId;
@@ -30,6 +30,59 @@ namespace XrSpatial.Capture
 #else
         public bool NeedsFlip => true;
 #endif
+
+        // ------------------------------------------------------------------ Depth Lab (optional; nothing here runs while AI depth is not selected)
+
+        const int DepthRequestFps = 5;                          // depth moves slowly: a few updates a second, smoothed between them here
+        Texture2D m_DepthTex;
+        byte[] m_DepthTarget, m_DepthCur;
+        int m_DepthW, m_DepthH, m_DepthSeen, m_DepthEpoch = -1;
+        bool m_DepthAsked;
+
+        public Texture2D Depth => m_DepthTex;
+
+        /// <summary>Called every frame by the source: asks the PC for depth while AI depth is selected (and again after a reconnect), and eases the picture towards each new estimate.</summary>
+        public void TickDepth(float dt)
+        {
+            bool want = DepthProfiles.MasterOn && DepthProfiles.Live == DepthProfiles.Profile.Ai;
+            if (want != m_DepthAsked || (want && m_DepthEpoch != RemoteHost.ConnectionEpoch))
+            {
+                m_DepthAsked = want; m_DepthEpoch = RemoteHost.ConnectionEpoch;
+                RemoteHost.RequestDepth(StreamId, want ? DepthRequestFps : 0);
+                if (!want) DisposeDepth();
+            }
+            if (!want) return;
+            if (RemoteHost.TakeDepth(StreamId, ref m_DepthSeen, out var data, out int w, out int h))
+            {
+                if (m_DepthTex == null || m_DepthW != w || m_DepthH != h)
+                {
+                    if (m_DepthTex) UnityEngine.Object.Destroy(m_DepthTex);
+                    m_DepthTex = new Texture2D(w, h, TextureFormat.R8, false, true) { name = "LiveDepth", wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+                    m_DepthW = w; m_DepthH = h; m_DepthCur = (byte[])data.Clone();                  // the first picture is shown as it is
+                    m_DepthTex.SetPixelData(m_DepthCur, 0); m_DepthTex.Apply(false);
+                }
+                m_DepthTarget = data;
+            }
+            if (m_DepthTarget != null && m_DepthCur != null && m_DepthTarget.Length == m_DepthCur.Length)
+            {
+                float k = 1f - Mathf.Exp(-dt * 6f);                                                    // ease towards the newest estimate over about a fifth of a second
+                bool changed = false;
+                for (int i = 0; i < m_DepthCur.Length; i++)
+                {
+                    int diff = m_DepthTarget[i] - m_DepthCur[i];
+                    if (diff == 0) continue;
+                    int step = Mathf.RoundToInt(diff * k); if (step == 0) step = diff > 0 ? 1 : -1;
+                    m_DepthCur[i] = (byte)(m_DepthCur[i] + step); changed = true;
+                }
+                if (changed) { m_DepthTex.SetPixelData(m_DepthCur, 0); m_DepthTex.Apply(false); }
+            }
+        }
+
+        void DisposeDepth()
+        {
+            if (m_DepthTex) UnityEngine.Object.Destroy(m_DepthTex);
+            m_DepthTex = null; m_DepthTarget = null; m_DepthCur = null; m_DepthW = m_DepthH = 0;
+        }
 
         public NetworkBackend(long hwnd)
         {
@@ -185,6 +238,7 @@ namespace XrSpatial.Capture
 
         public void Dispose()
         {
+            DisposeDepth();
             RemoteHost.CloseStream(StreamId);
 #if UNITY_ANDROID && !UNITY_EDITOR
             m_Hevc?.Dispose(); m_Hevc = null;

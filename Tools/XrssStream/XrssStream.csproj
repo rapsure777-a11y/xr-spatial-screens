@@ -16,6 +16,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.22.0" />
     <PackageReference Include="SkiaSharp" Version="3.116.1" />
     <PackageReference Include="System.Drawing.Common" Version="8.0.10" />
   </ItemGroup>

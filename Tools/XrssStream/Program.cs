@@ -37,7 +37,7 @@ using System.Threading;
 //     'K' stream u16, kind u8, code u32    key: kind 0 type the character (UTF-16 code), 1 key down, 2 key up (Windows virtual-key code); the window is brought to the front first
 static unsafe class Program
 {
-    public const uint ListMagic = 0x4C535258, FrameMagic = 0x32535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258, LayoutMagic = 0x59535258, VideoMagic = 0x56535258;     // 'XRSL', 'XRS2', 'XRSS', 'XRSA', 'XRSY', 'XRSV'
+    public const uint ListMagic = 0x4C535258, FrameMagic = 0x32535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258, LayoutMagic = 0x59535258, VideoMagic = 0x56535258, DepthMagic = 0x44535258;     // 'XRSL', 'XRS2', 'XRSS', 'XRSA', 'XRSY', 'XRSV'
     public static string CapturePath;
     public static int Fps = 60, MaxW = 2880, Quality = 90;
 
@@ -96,6 +96,10 @@ sealed unsafe class StreamState
     public HevcPipe Pipe;
     public int DupSeq;
     public readonly ConcurrentQueue<uint> PendingIds = new ConcurrentQueue<uint>();
+    // Depth Lab: depth estimation for this stream, asked for by the headset (0 = off, the default; nothing below runs)
+    public volatile int DepthFps;
+    public long LastDepth; public int DepthBusy; public uint DepthCounter; public byte[] DepthBuf;
+    public readonly DepthEstimator.Smoother DepthSmooth = new DepthEstimator.Smoother();
 
     public StreamState(ushort id, long hwnd, int port)
     {
@@ -158,6 +162,26 @@ sealed unsafe class StreamState
         return counter != LastCounter && w >= 16 && h >= 16 && w <= 8192 && h <= 8192 && stride >= w * 4 && (slot == 0 || slot == 1) && (long)stride * h <= cap;
     }
 
+    /// <summary>A copy of the newest frame if it is newer than <paramref name="last"/> (for the depth estimator; the video path is not involved), else null.</summary>
+    public byte[] GrabLatest(ref uint last, out int w, out int h, out int stride)
+    {
+        w = h = stride = 0;
+        if (!HasNewFrameSince(last, out uint counter, out w, out h, out stride, out int slot, out int cap)) return null;
+        int need = stride * h;
+        if (DepthBuf == null || DepthBuf.Length < need) DepthBuf = new byte[need];
+        fixed (byte* dst = DepthBuf) Buffer.MemoryCopy(Slot(slot, cap), dst, DepthBuf.Length, need);
+        if (CounterNow - counter > 1) return null;                                      // torn: the writer lapped us while copying
+        last = counter;
+        return DepthBuf;
+    }
+
+    bool HasNewFrameSince(uint last, out uint counter, out int w, out int h, out int stride, out int slot, out int cap)
+    {
+        counter = *(uint*)(Base + OffFrameCounter); w = *(int*)(Base + OffWidth); h = *(int*)(Base + OffHeight); stride = *(int*)(Base + OffStride);
+        slot = *(int*)(Base + OffLatestSlot); cap = *(int*)(Base + OffSlotCapacity);
+        return counter != last && w >= 16 && h >= 16 && w <= 8192 && h <= 8192 && stride >= w * 4 && (slot == 0 || slot == 1) && (long)stride * h <= cap;
+    }
+
     // ------------------------------------------------------------------ helper crashes
 
     long m_RestartWindowStart; int m_Restarts;
@@ -210,6 +234,41 @@ sealed unsafe class Session
         lock (m_WriteLock) { m_Net.Write(a, 0, a.Length); if (b != null) m_Net.Write(b, 0, b.Length); }
     }
 
+    // ------------------------------------------------------------------ Depth Lab
+
+    long m_DepthStatAt, m_DepthMsSum; int m_DepthCount;
+
+    void DepthTick(StreamState s)
+    {
+        long now = Stopwatch.GetTimestamp();
+        if (now - s.LastDepth < Stopwatch.Frequency / Math.Max(1, s.DepthFps) || Interlocked.CompareExchange(ref s.DepthBusy, 1, 0) != 0) return;
+        var buf = s.GrabLatest(ref s.DepthCounter, out int w, out int h, out int stride);
+        if (buf == null) { Volatile.Write(ref s.DepthBusy, 0); return; }                  // nothing new in the window: nothing to estimate
+        s.LastDepth = now;
+        ThreadPool.UnsafeQueueUserWorkItem(_ =>
+        {
+            try
+            {
+                long t0 = Stopwatch.GetTimestamp();
+                var d = DepthEstimator.Estimate(buf, w, h, stride, s.DepthSmooth, out int ow, out int oh);
+                if (d != null && !s.Ended) SendDepth(s.Id, d, ow, oh);
+                Interlocked.Add(ref m_DepthMsSum, (Stopwatch.GetTimestamp() - t0) * 1000 / Stopwatch.Frequency); Interlocked.Increment(ref m_DepthCount);
+                if (Stopwatch.GetTimestamp() - m_DepthStatAt > 5 * Stopwatch.Frequency) { m_DepthStatAt = Stopwatch.GetTimestamp(); int n = Interlocked.Exchange(ref m_DepthCount, 0); long ms = Interlocked.Exchange(ref m_DepthMsSum, 0); if (n > 0) Console.WriteLine($"depth: {n} maps in 5 s, {ms / n} ms each"); }
+            }
+            catch (Exception e) { Console.WriteLine("depth: " + e.Message); }
+            finally { Volatile.Write(ref s.DepthBusy, 0); }
+        }, null);
+    }
+
+    /// <summary>'XRSD': a depth picture for a stream (w and h 0 and no data means this PC cannot make depth).</summary>
+    void SendDepth(ushort id, byte[] data, int w, int h)
+    {
+        var m = new byte[16];
+        BitConverter.GetBytes(Program.DepthMagic).CopyTo(m, 0); BitConverter.GetBytes((uint)(data?.Length ?? 0)).CopyTo(m, 4);
+        BitConverter.GetBytes((ushort)w).CopyTo(m, 8); BitConverter.GetBytes((ushort)h).CopyTo(m, 10); BitConverter.GetBytes(id).CopyTo(m, 12);
+        try { Send(m, data); } catch { m_Gone = true; }
+    }
+
     void SendStatus(ushort id, byte state)
     {
         var m = new byte[12]; BitConverter.GetBytes(Program.StatusMagic).CopyTo(m, 0); BitConverter.GetBytes(id).CopyTo(m, 4); m[6] = state;
@@ -250,6 +309,16 @@ sealed unsafe class Session
                         }
                     case 'L': { Fill(2); Find(BitConverter.ToUInt16(b, 0))?.Injector.Handle(InputInjector.Lost, 0, 0, 0); break; }
                     case 'S': { Fill(1); SetAudio(b[0] != 0); break; }
+                    case 'D':
+                        {
+                            Fill(3); var s = Find(BitConverter.ToUInt16(b, 0)); int fps = Math.Clamp((int)b[2], 0, 15);
+                            if (s != null)
+                            {
+                                if (fps > 0 && !DepthEstimator.Ready) { Console.WriteLine($"stream {s.Id}: depth asked for but not available: {DepthEstimator.Problem}"); SendDepth(s.Id, null, 0, 0); fps = 0; }
+                                s.DepthFps = fps; s.DepthCounter = 0; Console.WriteLine($"stream {s.Id}: depth {(fps > 0 ? fps + " fps" : "off")}");
+                            }
+                            break;
+                        }
                     case 'R':
                         {
                             Fill(5); var s = Find(BitConverter.ToUInt16(b, 0));
@@ -385,6 +454,7 @@ sealed unsafe class Session
                         if (s.TryRestartCapture()) continue;                                          // the helper crashed but the window is still open
                         Console.WriteLine($"stream {s.Id}: window closed"); CloseEnded(s); continue;
                     }
+                    if (s.DepthFps > 0) DepthTick(s);                                            // Depth Lab only; never runs unless the headset asked for depth on this stream
                     long now = Stopwatch.GetTimestamp();
                     if (now - s.LastSend < Stopwatch.Frequency / Math.Max(1, s.FpsCap) || Volatile.Read(ref m_InFlight) >= Workers || Volatile.Read(ref s.InFlight) >= 2 || (s.Codec == 1 && s.PendingIds.Count >= 3)) continue;
                     if (!s.HasNewFrame(out uint counter, out int w, out int h, out int stride, out int slot, out int cap)) continue;

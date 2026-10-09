@@ -68,6 +68,7 @@ namespace XrSpatial.Capture
                 if (!IsSynthetic && Time.realtimeSinceStartup > m_RetryAt) { m_RetryAt = Time.realtimeSinceStartup + 2f; Restart(); }
                 return;
             }
+            (Backend as NetworkBackend)?.TickDepth(Time.unscaledDeltaTime);                       // Depth Lab: does nothing unless AI depth is selected
             if (Backend is IYuvBackend yuv && yuv.IsYuvActive)
             {
                 // video: three planes converted on the GPU into the same shared source texture the panels sample
