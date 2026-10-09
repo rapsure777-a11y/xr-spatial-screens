@@ -21,7 +21,7 @@ namespace XrSpatial.Capture
         static void Start()
         {
             string dir = Path.Combine(Application.persistentDataPath, "bench");
-            if (!Directory.Exists(dir)) return;
+            if (!File.Exists(Path.Combine(dir, "run.flag"))) return;                     // opt-in: a stray clip folder must never start the benchmark
             int w = 2880, h = 1200;
             var t = new Thread(() =>
             {

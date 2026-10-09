@@ -171,7 +171,6 @@ namespace XrSpatial.Capture
             using (var codecClass = new AndroidJavaClass("android.media.MediaCodec"))
             using (var fmt = fmtClass.CallStatic<AndroidJavaObject>("createVideoFormat", "video/hevc", w, h))
             {
-                try { fmt.Call("setInteger", "low-latency", 1); } catch { }
                 var codec = codecClass.CallStatic<AndroidJavaObject>("createDecoderByType", "video/hevc");
                 codec.Call("configure", fmt, null, null, 0);
                 codec.Call("start");

@@ -21,8 +21,8 @@ sealed class HevcPipe : IDisposable
     readonly Action<byte[], bool, bool> m_OnUnit;
     readonly object m_WriteLock = new object();
     readonly System.Collections.Concurrent.ConcurrentQueue<bool> m_Slots = new System.Collections.Concurrent.ConcurrentQueue<bool>();      // true = a re-sent copy of the last picture
-    byte[] m_Last; int m_LastLen, m_Kicks; long m_LastWriteMs;
-    static readonly int KickMs = int.TryParse(Environment.GetEnvironmentVariable("XRSS_KICKMS"), out var km) ? km : 20, KickCount = int.TryParse(Environment.GetEnvironmentVariable("XRSS_KICKS"), out var kc) ? kc : 2;
+    byte[] m_Last; int m_LastLen, m_Kicks; long m_LastWriteMs; double m_GapMs = 33;                  // m_GapMs: smoothed time between pictures
+    static readonly int KickMs = int.TryParse(Environment.GetEnvironmentVariable("XRSS_KICKMS"), out var km) ? km : 30, KickCount = int.TryParse(Environment.GetEnvironmentVariable("XRSS_KICKS"), out var kc) ? kc : 2;
     volatile bool m_Dead;
     public bool Dead => m_Dead || m_Proc.HasExited;
     public static string FfmpegPath;
@@ -44,7 +44,7 @@ sealed class HevcPipe : IDisposable
     {
         Width = w; Height = h; m_OnUnit = onUnit;
         m_Udp = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
-        m_Udp.Client.ReceiveBufferSize = 8 << 20;
+        m_Udp.Client.ReceiveBufferSize = 64 << 20;
         int port = ((IPEndPoint)m_Udp.Client.LocalEndPoint).Port;
         string br = mbit.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
         string peak = (mbit * 2).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
@@ -52,7 +52,7 @@ sealed class HevcPipe : IDisposable
         string args = $"-hide_banner -loglevel error -nostdin -fflags nobuffer -flags low_delay -threads 1 -f rawvideo -pix_fmt bgra -video_size {w}x{h} -framerate {fps} -i pipe:0 " +
                       "-color_range tv -colorspace bt709 -color_primaries bt709 -color_trc bt709 " +
                       $"-c:v hevc_amf -usage ultralowlatency -latency true -async_depth 2 -preanalysis false -preencode false -quality quality -rc vbr_peak -b:v {br}M -maxrate {peak}M -g {fps * 2} -bf 0 -header_insertion_mode idr -fps_mode passthrough " +
-                      $"-flush_packets 1 -f rtp -payload_type 96 \"rtp://127.0.0.1:{port}?pkt_size=1400\"";
+                      $"-flush_packets 1 -f rtp -payload_type 96 \"rtp://127.0.0.1:{port}?pkt_size=60000\"";
         var over = Environment.GetEnvironmentVariable("XRSS_FFENC");                    // test hook: replaces the encoder options
         if (!string.IsNullOrEmpty(over)) args = args.Substring(0, args.IndexOf("-c:v hevc_amf")) + over + args.Substring(args.IndexOf(" -f rtp") );
         m_Proc = Process.Start(new ProcessStartInfo(FfmpegPath, args) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardError = true });
@@ -73,7 +73,9 @@ sealed class HevcPipe : IDisposable
             Thread.Sleep(3);
             lock (m_WriteLock)
             {
-                if (m_Dead || m_LastLen == 0 || m_Kicks >= KickCount || Environment.TickCount64 - m_LastWriteMs < KickMs) continue;
+                // the first nudge waits 1.5 pictures' worth of quiet (never fires while a stream is moving steadily), the next one follows quickly
+                long wait = m_Kicks == 0 ? (long)Math.Clamp(m_GapMs * 1.5, 6, KickMs) : 6;
+                if (m_Dead || m_LastLen == 0 || m_Kicks >= KickCount || Environment.TickCount64 - m_LastWriteMs < wait) continue;
                 m_Kicks++; m_LastWriteMs = Environment.TickCount64;
                 m_Slots.Enqueue(true);
                 try { m_In.Write(m_Last, 0, m_LastLen); m_In.Flush(); } catch { m_Dead = true; }
@@ -90,7 +92,8 @@ sealed class HevcPipe : IDisposable
             {
                 var span = new ReadOnlySpan<byte>((void*)pixels, bytes);
                 if (m_Last == null || m_Last.Length != bytes) m_Last = new byte[bytes];
-                span.CopyTo(m_Last); m_LastLen = bytes; m_Kicks = 0; m_LastWriteMs = Environment.TickCount64;
+                span.CopyTo(m_Last); m_LastLen = bytes; m_Kicks = 0;
+                long nowMs = Environment.TickCount64; if (m_LastWriteMs > 0) m_GapMs = m_GapMs * 0.8 + Math.Min(500, nowMs - m_LastWriteMs) * 0.2; m_LastWriteMs = nowMs;
                 m_Slots.Enqueue(false);
                 m_In.Write(m_Last, 0, bytes); m_In.Flush();
             }
@@ -109,9 +112,9 @@ sealed class HevcPipe : IDisposable
             {
                 byte[] p;
                 try { p = m_Udp.Receive(ref ep); } catch { break; }
-                if (p.Length < 14) continue;
+                if (p.Length < 14 || (p[1] & 0x7f) != 96) continue;                     // RTP payload type 96 only: ffmpeg also sends RTCP reports to the next port, which can be another stream's receiver
                 int seq = (p[2] << 8) | p[3];
-                if (lastSeq >= 0 && seq != ((lastSeq + 1) & 0xffff)) broken = true;           // a datagram was lost: this picture (and the chain after it) is damaged
+                if (lastSeq >= 0 && seq != ((lastSeq + 1) & 0xffff)) { if (!broken) Console.WriteLine($"video: RTP sequence jump {lastSeq} -> {seq} (datagram {p.Length} bytes, {au.Length} bytes of this picture so far)"); broken = true; }           // a datagram was lost: this picture (and the chain after it) is damaged
                 lastSeq = seq;
                 bool marker = (p[1] & 0x80) != 0;
                 int off = 12 + 4 * (p[0] & 0x0f);
