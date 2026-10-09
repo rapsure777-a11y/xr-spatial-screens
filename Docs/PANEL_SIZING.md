@@ -19,3 +19,10 @@ Labs page, "SIZING": source and shown pixels, panel size and angles, source px/d
 
 ## Not recorded
 Side-by-side numbers for freeform vs locked vs snapped on The Ascent were not written down. Add them here if they matter.
+
+## Findings from headset testing (2026-10-09)
+- Sharpness depends on panel size: a 2880 px source is only sharp at about 1:1 (very large, around 130 degrees wide). Shrunk, it goes soft because the Frame shows about 22 px per degree.
+- Snap Sharpness at 1:1 was too big to use, so Snap now has a width cap (Labs: none / 60 / 75 / 90 degrees). **Default 60 degrees.**
+- Labs "Sharper downscale" (mip bias off / mild -0.5 / strong -1) recovers sharpness on small panels; user: it works. Default is still off (`ScreenSource.MipBias`).
+- Labs "Stream width test" pins the stream width (auto / 1920 to 3840) to separate stream width from panel size.
+- Crops stay the sharpest way to get a small panel: they cover fewer source pixels.
