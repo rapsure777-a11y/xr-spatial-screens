@@ -20,6 +20,9 @@ namespace XrSpatial.Capture
         public bool HasFrame => View != null;
         public long FrameCount { get; private set; }
         public WindowGeometry Window => Backend != null ? Backend.Window : default;
+        /// <summary>True from the moment a source that had shown frames ends (window closed, PC host gone) until a new frame arrives; panels dim and say so instead of freezing on the last picture.</summary>
+        public bool Closed { get; private set; }
+        long m_ClosedAtFrame;
         public string Status => Backend != null ? Backend.Status : "not started";
 
         readonly Func<CaptureRequest> m_Request;
@@ -53,8 +56,10 @@ namespace XrSpatial.Capture
 
         public void Tick()
         {
+            if (Closed && FrameCount > m_ClosedAtFrame) Closed = false;
             if (Backend == null)
             {
+                if (!Closed && FrameCount > 0 && Def.kind != "pattern") { Closed = true; m_ClosedAtFrame = FrameCount; }
                 if (Def.kind != "pattern" && Time.realtimeSinceStartup > m_RetryAt) { m_RetryAt = Time.realtimeSinceStartup + 2f; Restart(); }
                 return;
             }
@@ -66,6 +71,7 @@ namespace XrSpatial.Capture
                 else Graphics.Blit(m_Raw, View);
                 FrameCount++;
             }
+            if (!Closed && FrameCount > 0 && Def.kind != "pattern" && Backend.HasEnded) { Closed = true; m_ClosedAtFrame = FrameCount; }
             if (Backend.HasEnded && Def.kind != "pattern" && Time.realtimeSinceStartup > m_RetryAt)
             {
                 m_RetryAt = Time.realtimeSinceStartup + 2f;
