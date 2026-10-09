@@ -241,6 +241,9 @@ namespace XrSpatial.App
             m_Labs.Add(MakeSlider(new Vector2(Style.Margin, y - 66), new Vector2(full, 66), () => $"Focus  {Mathf.RoundToInt(DepthLab.Focus * 100f)}%", () => DepthLab.Focus, DepthLab.SetFocus));
             y -= 66 + 4;
             Note("Which depth stays on the panel. Low: picture comes towards you. High: it sits behind a window.", 52);
+            m_Labs.Add(MakeSlider(new Vector2(Style.Margin, y - 66), new Vector2(full, 66), () => $"Pop  {Mathf.RoundToInt(DepthLab.Pop * 100f)}%", () => DepthLab.Pop, DepthLab.SetPop));
+            y -= 66 + 4;
+            Note("Pulls near objects away from the background. 0% = depth as the model gives it.", 28);
             y -= 10;
             float half = (full - Style.ColGap) / 2f;
             m_Labs.Add(MakeBtn(new Vector2(Style.Margin, y - Style.ButtonH), new Vector2(half, Style.ButtonH), () => "Add depth test", () => OnAddDepthTest?.Invoke(), null));

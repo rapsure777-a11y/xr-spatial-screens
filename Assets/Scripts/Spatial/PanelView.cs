@@ -128,7 +128,7 @@ namespace XrSpatial.Spatial
             m.SetFloat(ShowEdge, m_Material.GetFloat(ShowEdge));
             m.SetTexture(DepthTex, Source.DepthMap);
             float width = ((q[1] - q[0]).magnitude + (q[2] - q[3]).magnitude) * 0.5f;
-            m.SetVector(DepthParams, new Vector4(DepthLab.Relief(width, DepthLab.Strength, DepthLab.Focus), DepthLab.Focus, DepthLab.MaxDisplacement, 0f));
+            m.SetVector(DepthParams, new Vector4(DepthLab.Relief(width, DepthLab.Strength, DepthLab.Focus), DepthLab.Focus, DepthLab.MaxDisplacement, DepthLab.Pop * 2f));
             var n = QuadMath.FrontNormal(q);
             m.SetVector(PanelNormal, new Vector4(n.x, n.y, n.z, 0f));
         }
