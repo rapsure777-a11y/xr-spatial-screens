@@ -11,8 +11,8 @@ namespace XrSpatial.App
     /// <summary>
     /// The tool palette: a small world-space panel held over the non-pointing wrist (or floating beside the head without controllers). The pointing hand's laser
     /// highlights a button and the trigger presses it. UGUI is used for layout/text only; hit-testing is done by intersecting the laser with the canvas plane, so no
-    /// EventSystem or physics raycaster is needed (and nothing in the scene can steal the click). Two pages: the tools, and a window picker (so a window can be
-    /// chosen to capture without leaving VR).
+    /// EventSystem or physics raycaster is needed (and nothing in the scene can steal the click). Two pages: the tools (in labelled sections), and a window picker
+    /// (so a window can be chosen to capture without leaving VR). All colours and sizes live in <see cref="Style"/>.
     /// </summary>
     public sealed class PalettePanel : MonoBehaviour, IUiLayer
     {
@@ -25,13 +25,15 @@ namespace XrSpatial.App
         public Action OnToggleKeyboard;
         public bool Visible { get; private set; } = true;
 
-        const float W = 560f, H = 820f, Scale = 0.00055f;          // 0.31 m x 0.45 m
+        const float W = 560f, H = 880f, Scale = 0.00055f;          // 0.31 m x 0.48 m (the old 820 high panel needed about 850 for its 19 buttons, the last one hung below it)
         const int WindowsPerPage = 8;
         Canvas m_Canvas;
         RectTransform m_Rect;
-        Text m_Status;
+        Text m_Mode, m_Status;
         readonly List<Btn> m_Main = new List<Btn>();
         readonly List<Btn> m_Windows = new List<Btn>();
+        readonly List<GameObject> m_MainDecor = new List<GameObject>();            // section headers and hairlines: shown with the main page only
+        readonly List<(Text text, Func<string> label)> m_Headers = new List<(Text, Func<string>)>();
         List<Btn> Current => m_Page == Page.Main ? m_Main : m_Windows;
         Btn m_Hover;
         Font m_Font;
@@ -42,10 +44,29 @@ namespace XrSpatial.App
         bool m_Refreshing;
         bool m_Placed;
         volatile bool m_RebuildWindows;
+        static Sprite s_Round;
+
+        /// <summary>Every colour, size and gap of the palette in one place, so the look can be tuned without touching the layout code.</summary>
+        static class Style
+        {
+            public static readonly Color Back = new Color(0.045f, 0.06f, 0.08f, 0.93f);
+            public static readonly Color Button = new Color(0.13f, 0.17f, 0.22f, 1f);
+            public static readonly Color ButtonHover = new Color(0.20f, 0.46f, 0.68f, 1f);
+            public static readonly Color ButtonOn = new Color(0.08f, 0.34f, 0.40f, 1f);
+            public static readonly Color ButtonPressed = new Color(0.09f, 0.26f, 0.42f, 1f);
+            public static readonly Color OnBar = new Color(0.40f, 0.90f, 0.95f, 1f);
+            public static readonly Color Text = new Color(0.93f, 0.96f, 1f, 1f);
+            public static readonly Color TextDim = new Color(0.62f, 0.72f, 0.80f, 1f);
+            public static readonly Color TextFaint = new Color(0.50f, 0.58f, 0.65f, 1f);
+            public static readonly Color Accent = new Color(0.45f, 0.85f, 0.95f, 1f);
+            public static readonly Color Hairline = new Color(1f, 1f, 1f, 0.12f);
+            public const float ButtonH = 58f, RowGap = 5f, GroupGap = 4f, HeaderH = 24f, HeaderGap = 2f, Margin = 20f, ColGap = 20f, PressSeconds = 0.15f, HitPad = 2f;
+        }
 
         sealed class Btn
         {
-            public RectTransform rect; public Image bg; public Text label; public Func<string> text; public Action action; public Func<bool> active;
+            public RectTransform rect; public Image bg, bar; public Text label, detail; public Func<string> text, detailText; public Action action; public Func<bool> active, dim;
+            public float pressedUntil;
         }
 
         public static PalettePanel Create(Transform parent, SurfaceTool tool, SpatialWorkspace ws, IPointerSource pointer)
@@ -66,31 +87,41 @@ namespace XrSpatial.App
             m_Rect = GetComponent<RectTransform>();
             m_Rect.sizeDelta = new Vector2(W, H);
             m_Rect.localScale = Vector3.one * Scale;
-            Img("Back", m_Rect, new Vector2(0, 0), new Vector2(W, H), new Color(0.05f, 0.07f, 0.1f, 0.88f));
-            m_Status = Txt("Status", m_Rect, new Vector2(20, H - 150), new Vector2(W - 40, 140), 26, TextAnchor.UpperLeft, new Color(0.85f, 0.95f, 1f));
+            Rounded(Img("Back", m_Rect, new Vector2(0, 0), new Vector2(W, H), Style.Back));
+            m_Mode = Txt("Mode", m_Rect, new Vector2(Style.Margin, H - 12 - 28), new Vector2(W - 2 * Style.Margin, 28), 24, TextAnchor.MiddleLeft, Style.Accent);
+            m_Mode.fontStyle = FontStyle.Bold;
+            m_Status = Txt("Status", m_Rect, new Vector2(Style.Margin, H - 12 - 28 - 66), new Vector2(W - 2 * Style.Margin, 66), 24, TextAnchor.UpperLeft, Style.Text);
+            Txt("Brand", m_Rect, new Vector2(Style.Margin, 6), new Vector2(W - 2 * Style.Margin, 24), 18, TextAnchor.MiddleCenter, Style.TextFaint).text = "SPATIAL CROP  ·  GAMEBREAK LABS";
 
-            float y = H - 170, bw = (W - 60) / 2f, bh = 62f, gap = 6f;             // 9 rows must fit inside the panel (the last button was below it before)
-            int col = 0;
+            // Sections, top to bottom: what to show (source), how it sits (screen), which part (crop), how to use it (input), how it arrives (stream and sound), housekeeping (utility).
+            float y = H - 12 - 28 - 66 - 4;
+            int col = 0, cols = 2;
+            bool rowOpen = false;
+            void Row(int n) { if (rowOpen) y -= Style.ButtonH + Style.RowGap; rowOpen = false; col = 0; cols = n; }
+            void Section(string title, Func<string> live = null)
+            {
+                Row(cols);
+                if (m_Main.Count > 0) y -= Style.GroupGap;
+                var t = Txt("Header", m_Rect, new Vector2(Style.Margin + 2, y - Style.HeaderH), new Vector2(W - 2 * Style.Margin, Style.HeaderH), 22, TextAnchor.LowerLeft, Style.TextDim);
+                t.fontStyle = FontStyle.Bold; t.text = title;
+                var line = Img("Hairline", m_Rect, new Vector2(Style.Margin, y - Style.HeaderH), new Vector2(W - 2 * Style.Margin, 2), Style.Hairline);
+                m_MainDecor.Add(t.gameObject); m_MainDecor.Add(line.gameObject);
+                m_Headers.Add((t, live ?? (() => title)));
+                y -= Style.HeaderH + Style.HeaderGap;
+            }
             void Add(Func<string> text, Action action, Func<bool> active = null)
             {
-                float x = 20 + col * (bw + 20);
-                m_Main.Add(MakeBtn(new Vector2(x, y - bh), new Vector2(bw, bh), text, action, active));
-                if (++col == 2) { col = 0; y -= bh + gap; }
+                if (col >= cols) Row(cols);
+                float w = (W - 2 * Style.Margin - (cols - 1) * Style.ColGap) / cols;
+                float x = Style.Margin + col * (w + Style.ColGap);
+                m_Main.Add(MakeBtn(new Vector2(x, y - Style.ButtonH), new Vector2(w, Style.ButtonH), text, action, active));
+                rowOpen = true; col++;
             }
-            Add(() => Tool.Mode == ToolMode.Place ? $"Placing {Tool.PlacedCount}/4" : "New screen", () => { if (Tool.Mode == ToolMode.Place) Tool.SetIdle(); else Tool.BeginPlace(); }, () => Tool.Mode == ToolMode.Place);
-            Add(() => Tool.Mode == ToolMode.Crop ? "Cropping..." : "Crop", () => { if (Tool.Mode == ToolMode.Crop) Tool.SetIdle(); else Tool.BeginCrop(); }, () => Tool.Mode == ToolMode.Crop);
+
+            Section("SOURCE"); Row(2);
             Add(() => "Capture window...", ShowWindows);
             Add(() => "Next source", Tool.CycleSource);
-            Add(() => "Delete screen", Tool.DeleteSelected);
-            Add(() => "Turn picture", Tool.RotateSelectedPicture);
-            Add(() => Tool.InteractMode ? "Interact: ON" : "Interact: off", Tool.ToggleInteract, () => Tool.InteractMode);
-            Add(() => Tool.TouchPlacement ? "Points: touch" : "Points: laser", Tool.ToggleTouch);
             Add(() => "Test pattern", () => OnAddPattern?.Invoke());
-            Add(() => "Fit picture", Tool.FitSelectedAspect);
-            Add(() => "Reset crop", Tool.ResetSelectedCrop);
-            Add(() => "Save layout", () => { Workspace.SaveNow(); Tool.Say("Layout saved", 2f); });
-            Add(() => "Keyboard", () => OnToggleKeyboard?.Invoke());
-            if (RemoteHost.Active) Add(() => RemoteHost.SoundEnabled ? "PC sound: ON" : "PC sound: off", () => RemoteHost.SetSound(!RemoteHost.SoundEnabled), () => RemoteHost.SoundEnabled);
             if (RemoteHost.Active) Add(() => "Reconnect screen", () =>
             {
                 // a frozen or blocky screen: close its stream and open a fresh one (the selected screen, or the active source)
@@ -98,19 +129,46 @@ namespace XrSpatial.App
                 if (src == null) { Tool.Say("Select a screen first (point at it and press the trigger in edit mode).", 4f); return; }
                 src.Restart(); Tool.Say("Reconnecting " + (src.Def.label ?? src.Def.id), 3f);
             });
+
+            Section("SCREEN"); Row(2);
+            Add(() => Tool.Mode == ToolMode.Place ? $"Placing {Tool.PlacedCount}/4" : "New screen", () => { if (Tool.Mode == ToolMode.Place) Tool.SetIdle(); else Tool.BeginPlace(); }, () => Tool.Mode == ToolMode.Place);
+            Add(() => "Delete screen", Tool.DeleteSelected);
+            Add(() => "Turn picture", Tool.RotateSelectedPicture);
+            Add(() => "Fit picture", Tool.FitSelectedAspect);
+
+            Section("CROP"); Row(2);
+            Add(() => Tool.Mode == ToolMode.Crop ? "Cropping..." : "Crop", () => { if (Tool.Mode == ToolMode.Crop) Tool.SetIdle(); else Tool.BeginCrop(); }, () => Tool.Mode == ToolMode.Crop);
+            Add(() => "Reset crop", Tool.ResetSelectedCrop);
+
+            Section("INPUT"); Row(2);
+            Add(() => Tool.InteractMode ? "Interact: ON" : "Interact: off", Tool.ToggleInteract, () => Tool.InteractMode);
+            Add(() => Tool.TouchPlacement ? "Points: touch" : "Points: laser", Tool.ToggleTouch);
+
             if (RemoteHost.Active)
             {
-                Add(() => $"Volume - ({Mathf.RoundToInt(RemoteAudio.Gain * 100f)}%)", () => RemoteAudio.StepGain(-1));
+                Section("STREAM AND SOUND", () => $"STREAM AND SOUND  ·  volume {Mathf.RoundToInt(RemoteAudio.Gain * 100f)}%"); Row(2);
+                Add(() => RemoteHost.SoundEnabled ? "PC sound: ON" : "PC sound: off", () => RemoteHost.SetSound(!RemoteHost.SoundEnabled), () => RemoteHost.SoundEnabled);
+                Add(() => "Volume -", () => RemoteAudio.StepGain(-1));
                 Add(() => "Volume +", () => RemoteAudio.StepGain(1));
             }
+
+            Section("UTILITY"); Row(3);
+            Add(() => "Save layout", () => { Workspace.SaveNow(); Tool.Say("Layout saved", 2f); });
+            Add(() => "Keyboard", () => OnToggleKeyboard?.Invoke());
             Add(() => "Hide palette", () => SetVisible(false));
         }
 
-        Btn MakeBtn(Vector2 pos, Vector2 size, Func<string> text, Action action, Func<bool> active)
+        Btn MakeBtn(Vector2 pos, Vector2 size, Func<string> text, Action action, Func<bool> active, Func<string> detail = null, Func<bool> dim = null)
         {
-            var b = new Btn { text = text, action = action, active = active };
-            b.rect = Img("Btn", m_Rect, pos, size, Color.white, out b.bg).rectTransform;
-            b.label = Txt("Label", b.rect, new Vector2(8, 0), new Vector2(size.x - 16, size.y), 26, TextAnchor.MiddleCenter, Color.white);
+            var b = new Btn { text = text, action = action, active = active, detailText = detail, dim = dim };
+            b.rect = Rounded(Img("Btn", m_Rect, pos, size, Style.Button, out b.bg)).rectTransform;
+            // the "on" marker: a bar down the left edge, so a toggle reads as on from its shape and not only from its colour
+            b.bar = Rounded(Img("OnBar", b.rect, new Vector2(8, 10), new Vector2(8, size.y - 20), Style.OnBar));
+            b.bar.enabled = false;
+            bool wide = detail != null;
+            b.label = Txt("Label", b.rect, new Vector2(wide ? 24 : 12, 0), new Vector2(wide ? size.x * 0.64f - 24 : size.x - 24, size.y), wide ? 24 : 26, wide ? TextAnchor.MiddleLeft : TextAnchor.MiddleCenter, Style.Text);
+            if (wide) { b.label.resizeTextForBestFit = true; b.label.resizeTextMinSize = 16; b.label.resizeTextMaxSize = 24; }
+            if (wide) b.detail = Txt("Detail", b.rect, new Vector2(size.x * 0.64f, 0), new Vector2(size.x * 0.36f - 16, size.y), 20, TextAnchor.MiddleRight, Style.TextDim);
             return b;
         }
 
@@ -120,6 +178,7 @@ namespace XrSpatial.App
         {
             m_Page = Page.Windows; m_WindowPage = 0;
             foreach (var b in m_Main) b.rect.gameObject.SetActive(false);
+            foreach (var g in m_MainDecor) g.SetActive(false);
             RefreshWindows();
         }
 
@@ -129,6 +188,7 @@ namespace XrSpatial.App
             foreach (var b in m_Windows) Destroy(b.rect.gameObject);
             m_Windows.Clear();
             foreach (var b in m_Main) b.rect.gameObject.SetActive(true);
+            foreach (var g in m_MainDecor) g.SetActive(true);
         }
 
         void RefreshWindows()
@@ -146,29 +206,29 @@ namespace XrSpatial.App
             m_RebuildWindows = false;
             foreach (var b in m_Windows) Destroy(b.rect.gameObject);
             m_Windows.Clear();
-            float bh = 58f, gap = 6f, y = H - 160 - bh;
+            float bh = Style.ButtonH, gap = Style.RowGap, y = H - 12 - 28 - 66 - 4 - bh;
             int first = m_WindowPage * WindowsPerPage;
             for (int i = 0; i < WindowsPerPage; i++)
             {
                 int idx = first + i;
                 if (idx >= m_WindowList.Count) break;
                 var w = m_WindowList[idx];
-                string tag = w.state == "minimized" ? $"  (min, {w.w}x{w.h})" : w.OtherDesktop ? "  (other desktop)" : $"  ({w.w}x{w.h})";
-                string label = $"{w.process}: {Short(w.title, 16)}{tag}";
-                m_Windows.Add(MakeBtn(new Vector2(20, y), new Vector2(W - 40, bh), () => label, () =>
+                string tag = w.state == "minimized" ? $"min  {w.w}x{w.h}" : w.OtherDesktop ? "other desktop" : $"{w.w}x{w.h}";
+                string label = $"{w.process}: {Short(w.title, 20)}";
+                m_Windows.Add(MakeBtn(new Vector2(Style.Margin, y), new Vector2(W - 2 * Style.Margin, bh), () => label, () =>
                 {
                     if (w.OtherDesktop) { Tool.Say("That window is on another virtual desktop. Move it to this desktop on the PC first.", 6f); return; }
                     OnPickWindow?.Invoke(w); Tool.Say("Capturing " + w.process, 3f); ShowMain();
-                }, null));
+                }, null, () => tag, () => w.OtherDesktop));
                 y -= bh + gap;
             }
-            if (m_WindowList.Count == 0) m_Windows.Add(MakeBtn(new Vector2(20, y), new Vector2(W - 40, bh), () => m_Refreshing ? "Looking for windows..." : "No windows found (tap to retry)", RefreshWindows, null));
-            float by = 20f, bw = (W - 100) / 4f;
+            if (m_WindowList.Count == 0) m_Windows.Add(MakeBtn(new Vector2(Style.Margin, y), new Vector2(W - 2 * Style.Margin, bh), () => m_Refreshing ? "Looking for windows..." : "No windows found (tap to retry)", RefreshWindows, null));
+            float by = 38f, nh = 80f, nw = (W - 2 * Style.Margin - 3 * Style.ColGap) / 4f;
             int pages = Mathf.Max(1, Mathf.CeilToInt(m_WindowList.Count / (float)WindowsPerPage));
-            m_Windows.Add(MakeBtn(new Vector2(20, by), new Vector2(bw, 80), () => "Back", ShowMain, null));
-            m_Windows.Add(MakeBtn(new Vector2(40 + bw, by), new Vector2(bw, 80), () => "Refresh", RefreshWindows, null));
-            m_Windows.Add(MakeBtn(new Vector2(60 + 2 * bw, by), new Vector2(bw, 80), () => "Monitor", () => { OnPickMonitor?.Invoke(0); ShowMain(); }, null));
-            m_Windows.Add(MakeBtn(new Vector2(80 + 3 * bw, by), new Vector2(bw, 80), () => $"Page {m_WindowPage + 1}/{pages}", () => { m_WindowPage = (m_WindowPage + 1) % pages; m_RebuildWindows = true; }, null));
+            m_Windows.Add(MakeBtn(new Vector2(Style.Margin, by), new Vector2(nw, nh), () => "Back", ShowMain, null));
+            m_Windows.Add(MakeBtn(new Vector2(Style.Margin + (nw + Style.ColGap), by), new Vector2(nw, nh), () => "Refresh", RefreshWindows, null));
+            m_Windows.Add(MakeBtn(new Vector2(Style.Margin + 2 * (nw + Style.ColGap), by), new Vector2(nw, nh), () => "Monitor", () => { OnPickMonitor?.Invoke(0); ShowMain(); }, null));
+            m_Windows.Add(MakeBtn(new Vector2(Style.Margin + 3 * (nw + Style.ColGap), by), new Vector2(nw, nh), () => $"Page {m_WindowPage + 1}/{pages}", () => { m_WindowPage = (m_WindowPage + 1) % pages; m_RebuildWindows = true; }, null));
         }
 
         /// <summary>Normal windows first, then minimized ones (the PC restores them when picked), then windows on other virtual desktops; by program name within each group.</summary>
@@ -179,7 +239,7 @@ namespace XrSpatial.App
             s.Sort((a, b) => { int r = Rank(a).CompareTo(Rank(b)); return r != 0 ? r : string.Compare(a.process, b.process, StringComparison.OrdinalIgnoreCase); });
             return s;
         }
-        static string Short(string s, int n) => s.Length <= n ? s : s.Substring(0, n - 1) + "â€¦";
+        static string Short(string s, int n) => s.Length <= n ? s : s.Substring(0, n - 1) + "...";
 
         // ------------------------------------------------------------------ building blocks
 
@@ -210,6 +270,28 @@ namespace XrSpatial.App
             return t;
         }
 
+        /// <summary>Gives an image softly rounded corners (a small generated 9-slice sprite shared by every rectangle in the palette).</summary>
+        static Image Rounded(Image img)
+        {
+            if (!s_Round)
+            {
+                const int n = 32, r = 10;
+                var tex = new Texture2D(n, n, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp, hideFlags = HideFlags.HideAndDontSave };
+                for (int py = 0; py < n; py++)
+                    for (int px = 0; px < n; px++)
+                    {
+                        float cx = px + 0.5f, cy = py + 0.5f;
+                        float dx = Mathf.Max(r - cx, cx - (n - r), 0f), dy = Mathf.Max(r - cy, cy - (n - r), 0f);
+                        tex.SetPixel(px, py, new Color(1f, 1f, 1f, Mathf.Clamp01(r - Mathf.Sqrt(dx * dx + dy * dy) + 0.5f)));
+                    }
+                tex.Apply();
+                s_Round = Sprite.Create(tex, new Rect(0, 0, n, n), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, new Vector4(r, r, r, r));
+                s_Round.hideFlags = HideFlags.HideAndDontSave;
+            }
+            img.sprite = s_Round; img.type = Image.Type.Sliced;
+            return img;
+        }
+
         public void SetVisible(bool v) { Visible = v; gameObject.SetActive(v); }
         public void Toggle() => SetVisible(!Visible);
 
@@ -224,12 +306,19 @@ namespace XrSpatial.App
             var src = Workspace.GetSource(Workspace.ActiveSourceId);
             var def = Workspace.Layout.FindSource(Workspace.ActiveSourceId);
             string srcLine = def != null ? $"{(string.IsNullOrEmpty(def.label) ? def.id : def.label)}: {src?.Status}" : "no source: choose a window";
-            m_Status.text = $"{mode}\n{srcLine}\n{Tool.Message}";
+            m_Mode.text = mode;
+            m_Status.text = $"{srcLine}\n{Tool.Message}";
+            if (m_Page == Page.Main) foreach (var h in m_Headers) h.text.text = h.label();
+            float now = Time.unscaledTime;
             foreach (var b in Current)
             {
                 b.label.text = b.text();
+                if (b.detail) b.detail.text = b.detailText();
                 bool act = b.active != null && b.active();
-                b.bg.color = b == m_Hover ? new Color(0.25f, 0.6f, 0.85f, 1f) : act ? new Color(0.2f, 0.5f, 0.3f, 1f) : new Color(0.14f, 0.18f, 0.24f, 1f);
+                bool dimmed = b.dim != null && b.dim();
+                b.bar.enabled = act;
+                b.bg.color = now < b.pressedUntil ? Style.ButtonPressed : b == m_Hover ? Style.ButtonHover : act ? Style.ButtonOn : Style.Button;
+                b.label.color = dimmed ? Style.TextFaint : Style.Text;
             }
         }
 
@@ -276,10 +365,11 @@ namespace XrSpatial.App
             hitDistance = d;
             foreach (var b in Current)
             {
-                var r = new Rect(b.rect.anchoredPosition, b.rect.sizeDelta);
+                // a couple of units of padding so the seam between two buttons is not a dead zone
+                var r = new Rect(b.rect.anchoredPosition - Vector2.one * Style.HitPad, b.rect.sizeDelta + Vector2.one * (2f * Style.HitPad));
                 if (r.Contains(p)) { m_Hover = b; break; }
             }
-            if (m_Hover != null && s.triggerDown) { Pointer?.Haptic(0.4f, 0.04f); m_Hover.action?.Invoke(); }
+            if (m_Hover != null && s.triggerDown) { m_Hover.pressedUntil = Time.unscaledTime + Style.PressSeconds; Pointer?.Haptic(0.4f, 0.04f); m_Hover.action?.Invoke(); }
             return true;
         }
     }
