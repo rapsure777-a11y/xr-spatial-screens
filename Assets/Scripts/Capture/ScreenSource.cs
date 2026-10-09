@@ -24,6 +24,9 @@ namespace XrSpatial.Capture
         public bool Closed { get; private set; }
         long m_ClosedAtFrame;
         public string Status => Backend != null ? Backend.Status : "not started";
+        /// <summary>The depth map of this source (Depth Lab), or null when the backend has none. Never touched while depth is off.</summary>
+        bool IsSynthetic => Def.kind == "pattern" || Def.kind == "depthtest";                    // generated locally: never "closed", nothing to reconnect
+        public Texture2D DepthMap => (Backend as IDepthProvider)?.Depth;
 
         readonly Func<CaptureRequest> m_Request;
         Texture2D m_Raw, m_Y, m_U, m_V;
@@ -41,6 +44,7 @@ namespace XrSpatial.Capture
             Backend?.Dispose();
             Backend = null;
             if (Def.kind == "pattern") Backend = new PatternBackend();
+            else if (Def.kind == "depthtest") Backend = new DepthTestBackend();
             else if (RemoteHost.Active)
             {
                 // headset build: the PC host streams the window; find it by process/title among the PC's windows (retried by Tick while it is not open)
@@ -60,8 +64,8 @@ namespace XrSpatial.Capture
             if (Closed && FrameCount > m_ClosedAtFrame) Closed = false;
             if (Backend == null)
             {
-                if (!Closed && FrameCount > 0 && Def.kind != "pattern") { Closed = true; m_ClosedAtFrame = FrameCount; }
-                if (Def.kind != "pattern" && Time.realtimeSinceStartup > m_RetryAt) { m_RetryAt = Time.realtimeSinceStartup + 2f; Restart(); }
+                if (!Closed && FrameCount > 0 && !IsSynthetic) { Closed = true; m_ClosedAtFrame = FrameCount; }
+                if (!IsSynthetic && Time.realtimeSinceStartup > m_RetryAt) { m_RetryAt = Time.realtimeSinceStartup + 2f; Restart(); }
                 return;
             }
             if (Backend is IYuvBackend yuv && yuv.IsYuvActive)
@@ -84,8 +88,8 @@ namespace XrSpatial.Capture
                 else Graphics.Blit(m_Raw, View);
                 FrameCount++;
             }
-            if (!Closed && FrameCount > 0 && Def.kind != "pattern" && Backend.HasEnded) { Closed = true; m_ClosedAtFrame = FrameCount; }
-            if (Backend.HasEnded && Def.kind != "pattern" && Time.realtimeSinceStartup > m_RetryAt)
+            if (!Closed && FrameCount > 0 && !IsSynthetic && Backend.HasEnded) { Closed = true; m_ClosedAtFrame = FrameCount; }
+            if (Backend.HasEnded && !IsSynthetic && Time.realtimeSinceStartup > m_RetryAt)
             {
                 m_RetryAt = Time.realtimeSinceStartup + 2f;
                 Restart();

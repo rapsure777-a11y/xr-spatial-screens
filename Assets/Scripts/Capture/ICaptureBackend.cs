@@ -32,3 +32,12 @@ namespace XrSpatial.Capture
         bool PollInto(ref Texture2D target);
     }
 }
+
+namespace XrSpatial.Capture
+{
+    /// <summary>Optional: a backend that can also supply a depth map for the picture it produces (0 = far, 1 = near, same aspect as the picture). Used only by the Depth Lab.</summary>
+    public interface IDepthProvider
+    {
+        Texture2D Depth { get; }
+    }
+}

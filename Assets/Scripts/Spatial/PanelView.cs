@@ -98,6 +98,64 @@ namespace XrSpatial.Spatial
         /// <summary>Points this panel at a new live source (after the source was replaced).</summary>
         public void Rebind(ScreenSource source) { Source = source; }
 
+
+        // ------------------------------------------------------------------ Depth Lab (optional 2.5D path; the flat mesh and material above are never edited)
+
+        Mesh m_DepthMesh;
+        Material m_DepthMaterial;
+        bool m_DepthActive, m_DepthWarned;
+        readonly Vector3[] m_DepthCorners = new Vector3[4];
+        static readonly int DepthTex = Shader.PropertyToID("_DepthTex"), DepthParams = Shader.PropertyToID("_DepthParams"), PanelNormal = Shader.PropertyToID("_PanelNormal");
+
+        /// <summary>True while this panel is drawn by the depth renderer instead of the flat one.</summary>
+        public bool DepthActive => m_DepthActive;
+
+        void UpdateDepth()
+        {
+            bool want = DepthLab.Enabled && Source != null && Def.visible && Source.DepthMap != null;
+            if (!want) { if (m_DepthActive) LeaveDepth(); return; }
+            if (!m_DepthActive && !EnterDepth()) return;
+            var q = Def.corners;
+            bool moved = false;
+            for (int i = 0; i < 4; i++) if (m_DepthCorners[i] != q[i]) { moved = true; m_DepthCorners[i] = q[i]; }
+            if (moved) { if (m_DepthMesh) Destroy(m_DepthMesh); m_DepthMesh = DepthLab.BuildGrid(q); m_Filter.sharedMesh = m_DepthMesh; }
+            var m = m_DepthMaterial;
+            // mirror the flat material's per-panel settings (source texture, crop, tint, edge highlight) so everything that drives the flat panel drives this one too
+            m.SetTexture(MainTex, m_Material.GetTexture(MainTex));
+            m.SetVector(Crop, m_Material.GetVector(Crop));
+            m.SetFloat(Opacity, m_Material.GetFloat(Opacity));
+            m.SetColor(Tint, m_Material.GetColor(Tint));
+            m.SetFloat(ShowEdge, m_Material.GetFloat(ShowEdge));
+            m.SetTexture(DepthTex, Source.DepthMap);
+            float width = ((q[1] - q[0]).magnitude + (q[2] - q[3]).magnitude) * 0.5f;
+            m.SetVector(DepthParams, new Vector4(DepthLab.Relief(width, DepthLab.Strength, DepthLab.Focus), DepthLab.Focus, DepthLab.MaxDisplacement, 0f));
+            var n = QuadMath.FrontNormal(q);
+            m.SetVector(PanelNormal, new Vector4(n.x, n.y, n.z, 0f));
+        }
+
+        bool EnterDepth()
+        {
+            var shader = Shader.Find("XrSpatial/PanelDepth");
+            if (!shader) { if (!m_DepthWarned) { m_DepthWarned = true; Debug.LogWarning("[XrSpatial] depth shader missing; staying flat"); } return false; }
+            if (!m_DepthMaterial) m_DepthMaterial = new Material(shader) { name = "PanelDepth-" + Def.id };
+            var q = Def.corners;
+            for (int i = 0; i < 4; i++) m_DepthCorners[i] = q[i];
+            m_DepthMesh = DepthLab.BuildGrid(q);
+            m_Filter.sharedMesh = m_DepthMesh;
+            m_Renderer.sharedMaterial = m_DepthMaterial;
+            m_DepthActive = true;
+            return true;
+        }
+
+        /// <summary>Back to the proven flat mesh and material (the depth mesh is freed).</summary>
+        void LeaveDepth()
+        {
+            m_Filter.sharedMesh = m_Mesh;
+            m_Renderer.sharedMaterial = m_Material;
+            if (m_DepthMesh) Destroy(m_DepthMesh);
+            m_DepthMesh = null; m_DepthActive = false;
+        }
+
         TextMesh m_ClosedLabel;
         bool m_ClosedShown;
 
@@ -109,6 +167,7 @@ namespace XrSpatial.Spatial
             if (closed != m_ClosedShown) { m_ClosedShown = closed; m_Material.SetColor(Tint, closed ? new Color(0.28f, 0.14f, 0.14f, 1f) : Color.white); }
             if (closed) UpdateClosedLabel();
             else if (m_ClosedLabel) m_ClosedLabel.gameObject.SetActive(false);
+            UpdateDepth();
         }
 
         /// <summary>"Window closed" text centred on a dimmed panel, facing the viewer's side of the panel, sized from the panel's width.</summary>
@@ -174,6 +233,8 @@ namespace XrSpatial.Spatial
 
         void OnDestroy()
         {
+            if (m_DepthMesh) Destroy(m_DepthMesh);
+            if (m_DepthMaterial) Destroy(m_DepthMaterial);
             if (m_Mesh) Destroy(m_Mesh);
             if (m_Material) Destroy(m_Material);
             if (m_HandleMat) Destroy(m_HandleMat);
