@@ -2,7 +2,9 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.XR;
 using UnityEngine.XR;
+using XrSpatial.Core;
 using XrSpatial.Spatial;
+using XrSpatial.XR;
 
 namespace XrSpatial.App
 {
@@ -62,6 +64,7 @@ namespace XrSpatial.App
             // A small controller stand-in at the aim pose: a body and a pointing tip, so the user sees where each hand is.
             var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             Destroy(body.GetComponent<Collider>());
+            body.name = "Body";
             body.transform.SetParent(root, false);
             body.transform.localScale = new Vector3(0.035f, 0.05f, 0.035f);
             body.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
@@ -75,6 +78,68 @@ namespace XrSpatial.App
 
         float m_NextDiag;
         bool m_ExtLogged;
+
+        // The runtime's own controller models (outline), once fetched. Until a model loads and can be located, the capsule placeholder stays.
+        readonly GameObject[] m_Model = new GameObject[2];            // 0 = left, 1 = right
+        float m_NextModelTry; int m_ModelTries; bool m_ModelsOff;
+        static Material s_OutlineMat;
+
+        /// <summary>Fetches the controller models through ControllerRenderModelFeature; retries every few seconds until both hands have one (controllers must be on).</summary>
+        void TickModels()
+        {
+            if (m_ModelsOff || (m_Model[0] && m_Model[1]) || !ControllerRenderModelFeature.Active || Time.unscaledTime < m_NextModelTry) return;
+            m_NextModelTry = Time.unscaledTime + (m_ModelTries++ < 8 ? 2f : 10f);
+            try
+            {
+                ControllerRenderModelFeature.Refresh();
+                for (int h = 0; h < 2; h++)
+                {
+                    if (m_Model[h] || !ControllerRenderModelFeature.TryGetModel(h == 0, out var glb)) continue;
+                    if (!GlbModel.TryParse(glb, out var data, out var problem)) { Debug.Log($"[XrSpatial] controller model {(h == 0 ? "left" : "right")}: {problem}"); continue; }
+                    var go = new GameObject(h == 0 ? "LeftControllerModel" : "RightControllerModel");
+                    go.transform.SetParent(transform, false);
+                    go.AddComponent<MeshFilter>().sharedMesh = GlbModel.ToMesh(data);
+                    var mr = go.AddComponent<MeshRenderer>();
+                    mr.sharedMaterial = OutlineMaterial();
+                    mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; mr.receiveShadows = false;
+                    go.SetActive(false);                                  // shown by UpdatePoses once the model can be located
+                    m_Model[h] = go;
+                    var b = data.bounds;
+                    Debug.Log($"[XrSpatial] controller model {(h == 0 ? "left" : "right")}: {data.vertices.Length} vertices, {data.triangles.Length / 3} triangles, size {b.size:0.000} centre {b.center:0.000}");
+                }
+            }
+            catch (System.Exception e) { m_ModelsOff = true; Debug.Log("[XrSpatial] controller models disabled: " + e.Message); }
+        }
+
+        static Material OutlineMaterial()
+        {
+            if (s_OutlineMat) return s_OutlineMat;
+            var sh = Shader.Find("XrSpatial/ControllerOutline");
+            s_OutlineMat = new Material(sh ? sh : Materials.UnlitShader) { name = "ControllerOutline", hideFlags = HideFlags.DontSave };
+            return s_OutlineMat;
+        }
+
+        float m_NextAlignLog;
+        void ShowModel(int h, Transform hand)
+        {
+            var go = m_Model[h];
+            if (!go) return;
+            bool located = ControllerRenderModelFeature.TryLocate(h == 0, out var p, out var r);
+            bool show = located && hand.gameObject.activeSelf;
+            if (show)
+            {
+                go.transform.SetLocalPositionAndRotation(p, r);
+                if (Time.unscaledTime > m_NextAlignLog)          // once per 15 s: where the model sits relative to the aim pose (for laser alignment)
+                {
+                    m_NextAlignLog = Time.unscaledTime + 15f;
+                    var d = Quaternion.Inverse(hand.localRotation) * (p - hand.localPosition);
+                    Debug.Log($"[XrSpatial] controller model {(h == 0 ? "L" : "R")} offset from aim pose (aim space) {d:0.000}, angle {Quaternion.Angle(hand.localRotation, r):0.0} deg");
+                }
+            }
+            go.SetActive(show);
+            var body = hand.Find("Body");
+            if (body) body.gameObject.SetActive(!show);               // the capsule only shows while there is no real model to show
+        }
 
         /// <summary>One-time log of what the OpenXR runtime offers (for controller render model support); read with adb logcat.</summary>
         void LogRuntimeExtensions()
@@ -93,6 +158,7 @@ namespace XrSpatial.App
         /// <summary>Every 3 s, writes what the controllers are doing to the player log, so a headset session can be diagnosed afterwards without being in the headset.</summary>
         void Update()
         {
+            TickModels();
             if (Time.unscaledTime < m_NextDiag) return;
             if (!m_ExtLogged) { m_ExtLogged = true; LogRuntimeExtensions(); }
             m_NextDiag = Time.unscaledTime + 3f;
@@ -120,6 +186,7 @@ namespace XrSpatial.App
         void UpdatePoses()
         {
             Pose(m_Left, LeftHand); Pose(m_Right, RightHand);
+            ShowModel(0, LeftHand); ShowModel(1, RightHand);
         }
 
         void Pose(HandInput h, Transform t)

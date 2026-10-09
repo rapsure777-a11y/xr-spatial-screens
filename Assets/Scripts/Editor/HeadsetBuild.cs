@@ -92,6 +92,7 @@ namespace XrSpatial.Editor
             oxr.renderMode = OpenXRSettings.RenderMode.SinglePassInstanced;
             oxr.depthSubmissionMode = OpenXRSettings.DepthSubmissionMode.Depth24Bit;
             foreach (var f in oxr.GetFeatures<PassthroughFeature>()) { f.enabled = true; Debug.Log("[XrSpatial] feature enabled: " + f.name); }
+            foreach (var f in oxr.GetFeatures<ControllerRenderModelFeature>()) { f.enabled = true; Debug.Log("[XrSpatial] feature enabled: " + f.name); }
             // Standard controller profiles: whichever one the Frame's runtime picks delivers poses and buttons (it presents the Steam controllers as Touch controllers).
             foreach (var f in oxr.GetFeatures<OpenXRInteractionFeature>())
             {

@@ -2,7 +2,11 @@
 
 Branch `claude/controller-polish` (from `claude/integration-depth` 631832b).
 
-## Part 1: Steam Frame controller outline (NOT done, needs a decision)
+## Part 1: Steam Frame controller outline (built 2026-10-09, awaiting a headset test with controllers awake)
+
+Built after the user approved: `XR/ControllerRenderModelFeature.cs` (custom OpenXR feature: XR_EXT_uuid + XR_EXT_render_model + XR_EXT_interaction_render_model via xrGetInstanceProcAddr; wraps xrWaitFrame only to read the predicted display time for xrLocateSpace), `Core/GlbModel.cs` (binary glTF to one Unity mesh, z flipped, winding reversed; 3 EditMode tests), `Resources/Shaders/XrSpatialControllerOutline.shader` (depth pre-pass plus rim glow), wiring in `XrPointerSource` (TickModels / ShowModel). The capsule placeholder stays until a model loads AND can be located, and comes back if either fails. Laser, ray and input code untouched. Verified on the Frame: extensions enabled, all functions resolved, app runs; the runtime returned 0 models because no controller was awake. The log prints the model-to-aim-pose offset (for laser alignment) once a model shows.
+
+### Original investigation (before the build)
 
 Findings from the headset (logged by `XrPointerSource.LogRuntimeExtensions`, read with adb logcat):
 - Runtime: SteamVR/OpenXR 2.17.10, API 1.0.34. 48 extensions available, 10 enabled.

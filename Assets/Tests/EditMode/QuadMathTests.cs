@@ -380,3 +380,62 @@ namespace XrSpatial.Tests
         }
     }
 }
+
+namespace XrSpatial.Tests
+{
+    public class GlbModelTests
+    {
+        // one triangle (0,0,0) (1,0,0) (0,1,0), counter-clockwise seen from +z, under a node translated by (0,0,2) and scaled 2
+        static byte[] Triangle(string nodeJson = "{\"mesh\":0,\"translation\":[0,0,2],\"scale\":[2,2,2]}")
+        {
+            var bin = new System.IO.MemoryStream();
+            var w = new System.IO.BinaryWriter(bin);
+            foreach (float f in new float[] { 0, 0, 0, 1, 0, 0, 0, 1, 0 }) w.Write(f);          // positions, 36 bytes
+            foreach (float f in new float[] { 0, 0, 1, 0, 0, 1, 0, 0, 1 }) w.Write(f);          // normals, 36 bytes
+            foreach (ushort i in new ushort[] { 0, 1, 2 }) w.Write(i);                          // indices, 6 bytes
+            w.Write((ushort)0);                                                                  // pad to 4
+            string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],\"nodes\":[" + nodeJson + "],\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"NORMAL\":1},\"indices\":2}]}],"
+                + "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"},{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"},{\"bufferView\":2,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}],"
+                + "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},{\"buffer\":0,\"byteOffset\":36,\"byteLength\":36},{\"buffer\":0,\"byteOffset\":72,\"byteLength\":6}],\"buffers\":[{\"byteLength\":80}]}";
+            while (json.Length % 4 != 0) json += " ";
+            var jb = System.Text.Encoding.UTF8.GetBytes(json); var bb = bin.ToArray();
+            var o = new System.IO.MemoryStream(); var ow = new System.IO.BinaryWriter(o);
+            ow.Write(0x46546C67u); ow.Write(2u); ow.Write((uint)(12 + 8 + jb.Length + 8 + bb.Length));
+            ow.Write((uint)jb.Length); ow.Write(0x4E4F534Au); ow.Write(jb);
+            ow.Write((uint)bb.Length); ow.Write(0x004E4942u); ow.Write(bb);
+            return o.ToArray();
+        }
+
+        [Test]
+        public void Parses_NodeTransform_FlipsHandedness_AndWinding()
+        {
+            Assert.IsTrue(XrSpatial.Core.GlbModel.TryParse(Triangle(), out var d, out var problem), problem);
+            Assert.AreEqual(3, d.vertices.Length);
+            Assert.AreEqual(new Vector3(0, 0, -2), d.vertices[0]);          // glTF z = +2 becomes Unity z = -2
+            Assert.AreEqual(new Vector3(2, 0, -2), d.vertices[1]);
+            Assert.AreEqual(new Vector3(0, 2, -2), d.vertices[2]);
+            Assert.AreEqual(-1f, d.normals[0].z, 1e-5f);
+            // counter-clockwise from +z in glTF; seen from -z in Unity (looking along +z) the triangle must still be clockwise, i.e. the front face points to -z
+            var n = Vector3.Cross(d.vertices[d.triangles[1]] - d.vertices[d.triangles[0]], d.vertices[d.triangles[2]] - d.vertices[d.triangles[0]]);
+            Assert.Less(n.z, 0f);
+            Assert.AreEqual(2f, d.bounds.size.x, 1e-5f);
+        }
+
+        [Test]
+        public void RejectsGarbageAndTruncated()
+        {
+            Assert.IsFalse(XrSpatial.Core.GlbModel.TryParse(new byte[] { 1, 2, 3 }, out _, out var p1)); Assert.IsNotEmpty(p1);
+            var glb = Triangle();
+            Assert.IsFalse(XrSpatial.Core.GlbModel.TryParse(System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Take(glb, glb.Length - 30)), out _, out var p2)); Assert.IsNotEmpty(p2);
+            Assert.IsFalse(XrSpatial.Core.GlbModel.TryParse(null, out _, out _));
+        }
+
+        [Test]
+        public void ToMesh_BuildsAMesh()
+        {
+            Assert.IsTrue(XrSpatial.Core.GlbModel.TryParse(Triangle(), out var d, out _));
+            var m = XrSpatial.Core.GlbModel.ToMesh(d);
+            Assert.AreEqual(3, m.vertexCount); Assert.AreEqual(3, m.triangles.Length);
+        }
+    }
+}
