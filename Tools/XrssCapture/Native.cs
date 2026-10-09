@@ -39,6 +39,23 @@ namespace XrssCapture
         [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO mi);
         [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out RECT value, int size);
 
+        [StructLayout(LayoutKind.Sequential)] public struct WINDOWPLACEMENT { public int length, flags, showCmd; public POINT ptMinPosition, ptMaxPosition; public RECT rcNormalPosition; }
+        [DllImport("user32.dll")] public static extern bool GetWindowPlacement(IntPtr hwnd, ref WINDOWPLACEMENT p);
+
+        [ComImport, Guid("a5cd92ff-29be-454c-8d04-d82879fb3f1b"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        interface IVirtualDesktopManager
+        {
+            [PreserveSig] int IsWindowOnCurrentVirtualDesktop(IntPtr hwnd, [MarshalAs(UnmanagedType.Bool)] out bool onCurrent);
+        }
+        [ComImport, Guid("aa509086-5ca9-4c25-8f95-589d3c07b48a")] class VirtualDesktopManagerClass { }
+
+        /// <summary>False when the window lives on another virtual desktop (Windows hides it from this one); true when it is on this desktop or the question cannot be answered.</summary>
+        public static bool IsOnCurrentDesktop(IntPtr hwnd)
+        {
+            try { var m = (IVirtualDesktopManager)new VirtualDesktopManagerClass(); return m.IsWindowOnCurrentVirtualDesktop(hwnd, out bool on) != 0 || on; }
+            catch { return true; }
+        }
+
         public static string Title(IntPtr hwnd)
         {
             int n = GetWindowTextLength(hwnd);
@@ -48,6 +65,7 @@ namespace XrssCapture
             return sb.ToString();
         }
 
+        [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
         public static bool IsCloaked(IntPtr hwnd) => DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, out int v, 4) == 0 && v != 0;
     }
 }
