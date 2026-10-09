@@ -25,7 +25,7 @@ switch ($Action) {
       if ($Install) { & $adb -s $Device shell am force-stop $Pkg | Out-Null; & $adb -s $Device install -r $Apk }
       # the supervisor restarts the host if it ever exits unexpectedly (see host-supervisor.ps1, logs\host.restarts.log)
       $sup = Join-Path $PSScriptRoot "host-supervisor.ps1"
-      $p = Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$sup`" -Port $Port -MaxW $MaxW -Fps $Fps -Exe `"$host_`" -Log `"$log`"" -PassThru -WindowStyle Hidden
+      $p = Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$sup`" -Port $Port -MaxW $MaxW -Fps $Fps -Exe `"$host_`" -Log `"$log`" -Device $Device -Adb `"$adb`"" -PassThru -WindowStyle Hidden
       & $adb -s $Device reverse "tcp:$Port" "tcp:$Port"
       & $adb -s $Device logcat -c
       & $adb -s $Device shell am start -n "$Pkg/com.unity3d.player.UnityPlayerGameActivity"
