@@ -21,7 +21,9 @@ using System.Threading;
 //     status 'XRSS' u32, stream u16, state u8 (0 ended, 1 opened, 2 failed), pad u8   (12 bytes)
 //     audio  'XRSA' u32, pcmLength u32, sampleRate u32, channels u16 (2), pad u16, then 16-bit little-endian interleaved PCM  (16-byte header; the PC's output, in ~10 ms chunks)
 //     layout 'XRSY' u32, nameLength u16, pad u16, dataLength u32, then the name and the layout file (one message per backed-up layout)
+//     video  'XRSV' u32, length u32, width i32, height i32, seq u32, stream u16, flags u8 (1 = keyframe), pad u8, then one HEVC access unit (Annex-B, parameter sets in-band on keyframes)
 //   client -> server
+//     'V' stream u16, codec u8             0 JPEG (default), 1 hardware HEVC (needs ffmpeg with AMD AMF on the PC)
 //     'Y' nameLength u8, name, dataLength u32, data   back up a layout file on the PC (name: letters, digits . _ - only)
 //     'Z'                                  send me every backed-up layout
 //     'S' on u8                            start (1) or stop (0) sending the PC's sound
@@ -35,7 +37,7 @@ using System.Threading;
 //     'K' stream u16, kind u8, code u32    key: kind 0 type the character (UTF-16 code), 1 key down, 2 key up (Windows virtual-key code); the window is brought to the front first
 static unsafe class Program
 {
-    public const uint ListMagic = 0x4C535258, FrameMagic = 0x32535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258, LayoutMagic = 0x59535258;     // 'XRSL', 'XRS2', 'XRSS', 'XRSA', 'XRSY'
+    public const uint ListMagic = 0x4C535258, FrameMagic = 0x32535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258, LayoutMagic = 0x59535258, VideoMagic = 0x56535258;     // 'XRSL', 'XRS2', 'XRSS', 'XRSA', 'XRSY', 'XRSV'
     public static string CapturePath;
     public static int Fps = 60, MaxW = 2880, Quality = 90;
 
@@ -46,6 +48,8 @@ static unsafe class Program
         Fps = int.Parse(Arg("fps", "60")); MaxW = int.Parse(Arg("maxw", "2880")); Quality = int.Parse(Arg("quality", "90"));
         CapturePath = Path.GetFullPath(Arg("capture", Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "XrssCapture", "publish", "XrssCapture.exe")));
         if (!File.Exists(CapturePath)) { Console.WriteLine("capture helper not found: " + CapturePath); return 2; }
+        HevcPipe.FfmpegPath = HevcPipe.Find(Arg("ffmpeg", ""));
+        Console.WriteLine(HevcPipe.FfmpegPath != null ? "hevc video available (ffmpeg " + HevcPipe.FfmpegPath + ")" : "hevc video unavailable (no ffmpeg found); streams stay on JPEG");
 
         var listener = new TcpListener(IPAddress.Loopback, port);
         listener.Start();
@@ -87,6 +91,11 @@ sealed unsafe class StreamState
     public long Frames, Bytes, EncTicks, ScaleTicks, Acks, RttTicks, RttMaxTicks;
     public int LastW, LastH;
     public readonly object WriteLock = new object();
+    /// <summary>0 = JPEG, 1 = hardware HEVC through <see cref="Pipe"/>. Pending = submitted pictures not yet back from the encoder, oldest first.</summary>
+    public volatile int Codec;
+    public HevcPipe Pipe;
+    public int DupSeq;
+    public readonly ConcurrentQueue<uint> PendingIds = new ConcurrentQueue<uint>();
 
     public StreamState(ushort id, long hwnd, int port)
     {
@@ -172,6 +181,7 @@ sealed unsafe class StreamState
     public void Dispose()
     {
         Ended = true;
+        try { Pipe?.Dispose(); } catch { }
         Injector.Release("stream closed"); Injector.ReleaseKeys();
         if (m_RestoredFromMinimized) { var h = new IntPtr(Hwnd); if (IsWindow(h)) ShowWindow(h, 6 /* SW_MINIMIZE */); }       // leave the desktop as it was
         try { if (Capture != null && !Capture.HasExited) { Capture.StandardInput.Close(); if (!Capture.WaitForExit(500)) Capture.Kill(); } } catch { }
@@ -255,6 +265,7 @@ sealed unsafe class Session
                             break;
                         }
                     case 'Z': SendLayouts(); break;
+                    case 'V': { Fill(3); var s = Find(BitConverter.ToUInt16(b, 0)); if (s != null) { s.Codec = b[2] == 1 && HevcPipe.FfmpegPath != null ? 1 : 0; Console.WriteLine($"stream {s.Id}: codec {(s.Codec == 1 ? "HEVC" : "JPEG")}"); } break; }
                     case 'K': { Fill(7); Find(BitConverter.ToUInt16(b, 0))?.Injector.Key(b[2], BitConverter.ToUInt32(b, 3)); break; }
                     default: throw new InvalidDataException("unknown message " + b[0]);
                 }
@@ -375,7 +386,7 @@ sealed unsafe class Session
                         Console.WriteLine($"stream {s.Id}: window closed"); CloseEnded(s); continue;
                     }
                     long now = Stopwatch.GetTimestamp();
-                    if (now - s.LastSend < Stopwatch.Frequency / Math.Max(1, s.FpsCap) || Volatile.Read(ref m_InFlight) >= Workers || Volatile.Read(ref s.InFlight) >= 2) continue;
+                    if (now - s.LastSend < Stopwatch.Frequency / Math.Max(1, s.FpsCap) || Volatile.Read(ref m_InFlight) >= Workers || Volatile.Read(ref s.InFlight) >= 2 || (s.Codec == 1 && s.PendingIds.Count >= 3)) continue;
                     if (!s.HasNewFrame(out uint counter, out int w, out int h, out int stride, out int slot, out int cap)) continue;
                     if (Dispatch(s, counter, w, h, stride, slot, cap, now)) worked = true;
                 }
@@ -412,7 +423,9 @@ sealed unsafe class Session
             try
             {
                 // SkiaSharp (libjpeg-turbo): scale into the output size, then encode 4:4:4 so coloured text edges stay clean.
-                int ow = Math.Min(cw, s.MaxW), oh = (int)((long)ch * ow / cw);
+                bool video = s.Codec == 1 && HevcPipe.FfmpegPath != null;
+                int ow = video ? VideoTier(cw, s.MaxW) : Math.Min(cw, s.MaxW), oh = (int)((long)ch * ow / cw);
+                if (video) { ow &= ~1; oh &= ~1; }
                 if (ow < 16 || oh < 16) return;                                       // an odd-shaped frame: skip it (the encoder crashes the whole host on empty pictures)
                 byte[] data = null;
                 using (var dstBmp = new SKBitmap(new SKImageInfo(ow, oh, SKColorType.Bgra8888, SKAlphaType.Opaque)))
@@ -424,6 +437,7 @@ sealed unsafe class Session
                         scaled = srcPix.ScalePixels(dstBmp.PeekPixels(), new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
                     if (!scaled) return;
                     Interlocked.Add(ref s.ScaleTicks, Stopwatch.GetTimestamp() - t0);
+                    if (video) { SubmitVideo(s, dstBmp, ow, oh, id); return; }
                     using var enc = dstBmp.PeekPixels().Encode(new SKJpegEncoderOptions(Program.Quality, SKJpegEncoderDownsample.Downsample444, SKJpegEncoderAlphaOption.Ignore));
                     if (enc == null) return;
                     data = enc.ToArray();
@@ -451,6 +465,67 @@ sealed unsafe class Session
         return true;
     }
 
+    // ------------------------------------------------------------------ hardware video
+
+    static readonly int[] VideoTiers = { 1280, 1920, 2400, 2880, 3440 };
+
+    /// <summary>The picture width for a video stream: the largest fixed tier that fits what the headset asked for, so the encoder is restarted rarely.</summary>
+    static int VideoTier(int sourceW, int maxW)
+    {
+        int target = Math.Min(sourceW, maxW), best = 0;
+        foreach (int t in VideoTiers) if (t <= target) best = t;
+        return best > 0 ? best : Math.Max(16, target & ~1);
+    }
+
+    void SubmitVideo(StreamState s, SKBitmap bmp, int ow, int oh, uint id)
+    {
+        lock (s.WriteLock)
+        {
+            if (id <= s.LastWritten || s.Ended) return;
+            if (s.Pipe == null || s.Pipe.Dead || s.Pipe.Width != ow || s.Pipe.Height != oh) StartPipe(s, ow, oh);
+            if (s.Pipe == null || bmp.RowBytes != ow * 4) return;
+            s.PendingIds.Enqueue(id);
+            Volatile.Write(ref s.SentAt[id & (s.SentAt.Length - 1)], Stopwatch.GetTimestamp());      // the round trip includes the encoder
+            s.LastWritten = id;
+            s.Pipe.Write(bmp.GetPixels(), ow * 4 * oh);
+        }
+    }
+
+    void StartPipe(StreamState s, int ow, int oh)
+    {
+        var old = s.Pipe; s.Pipe = null;
+        try { old?.Dispose(); } catch { }
+        while (s.PendingIds.TryDequeue(out _)) { }
+        double mbit = Math.Clamp(ow * (double)oh * Program.Fps * 0.19 / 1e6, 8, 90);
+        HevcPipe pipe = null;
+        try
+        {
+            pipe = new HevcPipe(ow, oh, Program.Fps, mbit, (data, key, dup) => OnVideoUnit(s, pipe, data, key, dup));
+            s.Pipe = pipe;
+            Console.WriteLine($"stream {s.Id}: hardware HEVC encoder started {ow}x{oh}, about {mbit:0} Mbit/s");
+        }
+        catch (Exception e) { Console.WriteLine($"stream {s.Id}: cannot start the HEVC encoder: {e.Message}"); s.Codec = 0; }
+    }
+
+    void OnVideoUnit(StreamState s, HevcPipe pipe, byte[] data, bool key, bool dup)
+    {
+        if (s.Pipe != pipe || s.Ended) return;
+        uint id;
+        if (dup) id = 0x80000000u | (uint)Interlocked.Increment(ref s.DupSeq);                       // a re-sent copy: no round-trip bookkeeping, the headset does not acknowledge it
+        else
+        {
+            if (!s.PendingIds.TryDequeue(out id)) return;
+            Interlocked.Add(ref s.EncTicks, Stopwatch.GetTimestamp() - Volatile.Read(ref s.SentAt[id & (s.SentAt.Length - 1)]));
+        }
+        var header = new byte[24];
+        BitConverter.GetBytes(Program.VideoMagic).CopyTo(header, 0); BitConverter.GetBytes((uint)data.Length).CopyTo(header, 4);
+        BitConverter.GetBytes(pipe.Width).CopyTo(header, 8); BitConverter.GetBytes(pipe.Height).CopyTo(header, 12); BitConverter.GetBytes(id).CopyTo(header, 16);
+        BitConverter.GetBytes(s.Id).CopyTo(header, 20); header[22] = (byte)((key ? 1 : 0) | (dup ? 2 : 0));
+        try { Send(header, data); } catch { m_Gone = true; return; }
+        Interlocked.Increment(ref s.Frames); Interlocked.Add(ref s.Bytes, data.Length);
+        s.LastW = pipe.Width; s.LastH = pipe.Height;
+    }
+
     void PrintStats(StreamState[] list, ref long statStart)
     {
         long since = Stopwatch.GetTimestamp() - statStart;
@@ -461,7 +536,7 @@ sealed unsafe class Session
             long f = Interlocked.Exchange(ref s.Frames, 0), b = Interlocked.Exchange(ref s.Bytes, 0), et = Interlocked.Exchange(ref s.EncTicks, 0);
             long a = Interlocked.Exchange(ref s.Acks, 0), rt = Interlocked.Exchange(ref s.RttTicks, 0), rm = Interlocked.Exchange(ref s.RttMaxTicks, 0);
             if (f == 0 && a == 0) continue;
-            Console.WriteLine($"stream {s.Id}: sent {f / sec:0.0} fps, {b * 8 / sec / 1e6:0.0} Mbit/s, {b / Math.Max(1, f) / 1024} KB/frame, encode {et * ms / Math.Max(1, f):0} ms | shown {a / sec:0.0} fps, round trip avg {(a > 0 ? rt * ms / a : 0):0} ms max {rm * ms:0} ms | {s.LastW}x{s.LastH}");
+            Console.WriteLine($"stream {s.Id} {(s.Codec == 1 ? "HEVC" : "JPEG")}: sent {f / sec:0.0} fps, {b * 8 / sec / 1e6:0.0} Mbit/s, {b / Math.Max(1, f) / 1024} KB/frame, encode {et * ms / Math.Max(1, f):0} ms | shown {a / sec:0.0} fps, round trip avg {(a > 0 ? rt * ms / a : 0):0} ms max {rm * ms:0} ms | {s.LastW}x{s.LastH}");
         }
         statStart = Stopwatch.GetTimestamp();
     }

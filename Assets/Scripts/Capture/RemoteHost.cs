@@ -20,12 +20,18 @@ namespace XrSpatial.Capture
     {
         public const string Address = "127.0.0.1";
         public const int Port = 5600;
-        const uint FrameMagic = 0x32535258, ListMagic = 0x4C535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258, LayoutMagic = 0x59535258;       // 'XRS2', 'XRSL', 'XRSS', 'XRSA', 'XRSY'
+        const uint FrameMagic = 0x32535258, ListMagic = 0x4C535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258, LayoutMagic = 0x59535258, VideoMagic = 0x56535258;       // 'XRS2', 'XRSL', 'XRSS', 'XRSA', 'XRSY', 'XRSV'
+
+        /// <summary>One HEVC access unit from the PC (a re-sent copy of the last picture has <see cref="dup"/> set: decoded like any other, never acknowledged).</summary>
+        public struct VideoUnit { public byte[] data; public int w, h; public uint seq; public bool key, dup; public long arrived; }
 
         sealed class Stream
         {
             public long hwnd; public StreamState state = StreamState.Opening;
             public byte[] latest; public int w, h; public uint seq; public long received;
+            public byte codec;                                                      // 0 JPEG, 1 HEVC
+            public readonly System.Collections.Concurrent.ConcurrentQueue<VideoUnit> units = new System.Collections.Concurrent.ConcurrentQueue<VideoUnit>();
+            public long videoBytes;
         }
 
         public static bool Active { get; private set; }
@@ -70,7 +76,7 @@ namespace XrSpatial.Capture
                     Debug.Log("[XrSpatial] remote: connected to the PC host");
                     RequestList();
                     SendSound();
-                    lock (s_Lock) foreach (var kv in s_Streams) { kv.Value.state = StreamState.Opening; SendOpen(kv.Key, kv.Value.hwnd); }     // streams wanted before the (re)connect
+                    lock (s_Lock) foreach (var kv in s_Streams) { kv.Value.state = StreamState.Opening; kv.Value.units.Clear(); SendOpen(kv.Key, kv.Value.hwnd); if (kv.Value.codec != 0) SendCodec(kv.Key, kv.Value.codec); }     // streams wanted before the (re)connect
                     while (!s_Quit)
                     {
                         Read(net, hdr, 4);
@@ -84,6 +90,23 @@ namespace XrSpatial.Capture
                             lock (s_Lock)
                             {
                                 if (s_Streams.TryGetValue(id, out var s)) { s.latest = data; s.w = w; s.h = h; s.seq = seq; s.received++; s.state = StreamState.Live; }
+                            }
+                            FramesReceived++;
+                        }
+                        else if (magic == VideoMagic)
+                        {
+                            Read(net, hdr, 20);
+                            int len = (int)BitConverter.ToUInt32(hdr, 0), w = BitConverter.ToInt32(hdr, 4), h = BitConverter.ToInt32(hdr, 8);
+                            uint seq = BitConverter.ToUInt32(hdr, 12); ushort id = BitConverter.ToUInt16(hdr, 16); byte flags = hdr[18];
+                            if (len < 0 || len > 32000000) throw new Exception("bad video unit size");
+                            var data = new byte[len]; Read(net, data, len);
+                            lock (s_Lock)
+                            {
+                                if (s_Streams.TryGetValue(id, out var s))
+                                {
+                                    s.units.Enqueue(new VideoUnit { data = data, w = w, h = h, seq = seq, key = (flags & 1) != 0, dup = (flags & 2) != 0, arrived = System.Diagnostics.Stopwatch.GetTimestamp() });
+                                    s.received++; s.videoBytes += len; s.state = StreamState.Live;
+                                }
                             }
                             FramesReceived++;
                         }
@@ -215,6 +238,42 @@ namespace XrSpatial.Capture
             SendOpen(id, hwnd);
             return id;
         }
+
+        static void SendCodec(ushort id, byte codec)
+        {
+            var m = new byte[4]; m[0] = (byte)'V'; BitConverter.GetBytes(id).CopyTo(m, 1); m[3] = codec;
+            Write(m);
+        }
+
+        /// <summary>Chooses the transport for a stream: 0 JPEG (default), 1 hardware HEVC. The PC keeps JPEG if it cannot encode video.</summary>
+        public static void SetCodec(ushort id, byte codec)
+        {
+            lock (s_Lock) { if (s_Streams.TryGetValue(id, out var s)) { s.codec = codec; s.units.Clear(); } }
+            SendCodec(id, codec);
+        }
+
+        /// <summary>The oldest undelivered video unit of a stream. Video cannot skip units the way JPEG frames can, so they come out in order.</summary>
+        public static bool TakeUnit(ushort id, out VideoUnit unit)
+        {
+            Stream s; lock (s_Lock) s_Streams.TryGetValue(id, out s);
+            if (s != null && s.units.TryDequeue(out unit)) return true;
+            unit = default; return false;
+        }
+
+        public static int UnitBacklog(ushort id) { lock (s_Lock) return s_Streams.TryGetValue(id, out var s) ? s.units.Count : 0; }
+
+        /// <summary>Drops every queued unit before the newest keyframe (a decoder that fell far behind jumps ahead instead of staying late). False when there is no keyframe to jump to.</summary>
+        public static bool SkipToLatestKey(ushort id)
+        {
+            Stream s; lock (s_Lock) s_Streams.TryGetValue(id, out s);
+            if (s == null) return false;
+            var all = new List<VideoUnit>(); while (s.units.TryDequeue(out var u)) all.Add(u);
+            int last = all.FindLastIndex(u => u.key);
+            for (int i = Mathf.Max(0, last); i < all.Count; i++) s.units.Enqueue(all[i]);
+            return last > 0;
+        }
+
+        public static long VideoBytes(ushort id) { lock (s_Lock) return s_Streams.TryGetValue(id, out var s) ? s.videoBytes : 0; }
 
         public static void CloseStream(ushort id)
         {

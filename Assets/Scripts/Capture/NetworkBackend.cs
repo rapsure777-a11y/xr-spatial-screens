@@ -10,7 +10,7 @@ namespace XrSpatial.Capture
     /// took ~80% of it with three large windows). Elsewhere (editor) it falls back to Texture2D.LoadImage. Each shown frame is acknowledged so the host can measure the round trip.
     /// Disposing closes the stream.
     /// </summary>
-    public sealed class NetworkBackend : ICaptureBackend
+    public sealed class NetworkBackend : ICaptureBackend, IYuvBackend
     {
         static double s_UploadMsSum; static int s_UploadCount; static float s_LogAt;
         public readonly ushort StreamId;
@@ -21,6 +21,7 @@ namespace XrSpatial.Capture
 
 #if UNITY_ANDROID && !UNITY_EDITOR
         readonly AndroidJpegDecoder m_Decoder = new AndroidJpegDecoder();
+        HevcDecoder m_Hevc;                            // hardware-encoded HEVC mode (software-decoded here): see PollYuv
         volatile bool m_Busy, m_Ready, m_Failed;       // m_Busy: a decode is running or its pixels are waiting for upload
         uint m_ReadySeq;
         long m_DecodeTicks;
@@ -30,7 +31,66 @@ namespace XrSpatial.Capture
         public bool NeedsFlip => true;
 #endif
 
-        public NetworkBackend(long hwnd) { Hwnd = hwnd; StreamId = RemoteHost.OpenStream(hwnd); }
+        public NetworkBackend(long hwnd)
+        {
+            Hwnd = hwnd; StreamId = RemoteHost.OpenStream(hwnd);
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (VideoMode.Hevc) { RemoteHost.SetCodec(StreamId, 1); m_Hevc = new HevcDecoder(StreamId); }
+#endif
+        }
+
+        // ------------------------------------------------------------------ video (HEVC) mode
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+        public bool IsYuvActive => m_Hevc != null;
+        double m_VStatAt, m_VDecSum; int m_VStatN; long m_VBytes0;
+
+        public bool PollYuv(ref Texture2D y, ref Texture2D u, ref Texture2D v, out int w, out int h)
+        {
+            w = m_W; h = m_H;
+            if (m_Hevc == null) return false;
+            if (m_Hevc.Failed)
+            {
+                // fall back to the proven JPEG path for this stream
+                UnityEngine.Debug.LogWarning("[XrSpatial] HEVC unavailable (" + m_Hevc.FailReason + "), this screen goes back to JPEG");
+                m_Hevc.Dispose(); m_Hevc = null; RemoteHost.SetCodec(StreamId, 0);
+                return false;
+            }
+            if (!m_Hevc.TryAcquire(out var py, out var pu, out var pv, out int pw, out int ph, out int lenY, out int lenC, out uint seq, out bool ack)) return false;
+            try
+            {
+                Plane(ref y, pw, ph); Plane(ref u, pw / 2, ph / 2); Plane(ref v, pw / 2, ph / 2);
+                var sw = Stopwatch.StartNew();
+                y.LoadRawTextureData(py, lenY); y.Apply(false);
+                u.LoadRawTextureData(pu, lenC); u.Apply(false);
+                v.LoadRawTextureData(pv, lenC); v.Apply(false);
+                LastDecodeMs = m_Hevc.DecodeMs;
+                Account(sw.Elapsed.TotalMilliseconds);
+                w = pw; h = ph; m_W = pw; m_H = ph;
+            }
+            finally { m_Hevc.Release(); }
+            if (ack) RemoteHost.Ack(StreamId, seq);
+            CountFrame();
+            m_VDecSum += m_Hevc.DecodeMs; m_VStatN++;
+            if (Time.unscaledTime - m_VStatAt > 5f)
+            {
+                long bytes = RemoteHost.VideoBytes(StreamId);
+                if (m_VStatAt > 0) UnityEngine.Debug.Log($"[XrSpatial] hevc stream {StreamId}: {m_Fps:0.0} fps shown, {pw}x{ph}, decode {m_VDecSum / Mathf.Max(1, m_VStatN):0.0} ms, backlog {m_Hevc.Queued}, unit age {m_Hevc.LastAgeMs:0} ms, {(bytes - m_VBytes0) * 8.0 / (Time.unscaledTime - m_VStatAt) / 1e6:0.0} Mbit/s");
+                m_VStatAt = Time.unscaledTime; m_VDecSum = 0; m_VStatN = 0; m_VBytes0 = bytes;
+            }
+            return true;
+        }
+
+        static void Plane(ref Texture2D t, int w, int h)
+        {
+            if (t && t.width == w && t.height == h) return;
+            if (t) Object.Destroy(t);
+            t = new Texture2D(w, h, TextureFormat.R8, false, true) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+        }
+#else
+        public bool IsYuvActive => false;
+        public bool PollYuv(ref Texture2D y, ref Texture2D u, ref Texture2D v, out int w, out int h) { w = h = 0; return false; }
+#endif
 
         public string Status => RemoteHost.Connected ? $"{RemoteHost.GetState(StreamId)}" + (m_W > 0 ? $" ({m_W}x{m_H}, {m_Fps:0} fps)" : "") : RemoteHost.State;
         public bool IsRunning => RemoteHost.Active && RemoteHost.GetState(StreamId) != StreamState.Ended && RemoteHost.GetState(StreamId) != StreamState.Failed;
@@ -127,6 +187,7 @@ namespace XrSpatial.Capture
         {
             RemoteHost.CloseStream(StreamId);
 #if UNITY_ANDROID && !UNITY_EDITOR
+            m_Hevc?.Dispose(); m_Hevc = null;
             // a decode may still be running on a worker: let it finish before its buffers go away
             ThreadPool.UnsafeQueueUserWorkItem(_ => { for (int i = 0; i < 200 && m_Busy && !m_Ready; i++) Thread.Sleep(10); m_Decoder.Dispose(); }, null);
 #endif

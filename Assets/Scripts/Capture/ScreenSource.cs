@@ -23,7 +23,8 @@ namespace XrSpatial.Capture
         public string Status => Backend != null ? Backend.Status : "not started";
 
         readonly Func<CaptureRequest> m_Request;
-        Texture2D m_Raw;
+        Texture2D m_Raw, m_Y, m_U, m_V;
+        Material m_YuvMat;
         float m_RetryAt;
 
         public ScreenSource(SourceDef def, Func<CaptureRequest> request)
@@ -58,7 +59,19 @@ namespace XrSpatial.Capture
                 if (Def.kind != "pattern" && Time.realtimeSinceStartup > m_RetryAt) { m_RetryAt = Time.realtimeSinceStartup + 2f; Restart(); }
                 return;
             }
-            if (Backend.PollInto(ref m_Raw) && m_Raw)
+            if (Backend is IYuvBackend yuv && yuv.IsYuvActive)
+            {
+                // video: three planes converted on the GPU into the same shared source texture the panels sample
+                if (yuv.PollYuv(ref m_Y, ref m_U, ref m_V, out int vw, out int vh) && m_Y)
+                {
+                    EnsureView(vw, vh);
+                    if (!m_YuvMat) m_YuvMat = new Material(Shader.Find("XrSpatial/Yuv"));
+                    m_YuvMat.SetTexture("_TexY", m_Y); m_YuvMat.SetTexture("_TexU", m_U); m_YuvMat.SetTexture("_TexV", m_V);
+                    Graphics.Blit(null, View, m_YuvMat);
+                    FrameCount++;
+                }
+            }
+            else if (Backend.PollInto(ref m_Raw) && m_Raw)
             {
                 EnsureView(m_Raw.width, m_Raw.height);
                 // The capture helper writes the top row first (what the panel shader expects); a decoded JPEG has its bottom row first, so flip it on the GPU.
@@ -88,6 +101,10 @@ namespace XrSpatial.Capture
             Backend?.Dispose(); Backend = null;
             if (View) { View.Release(); UnityEngine.Object.Destroy(View); }
             if (m_Raw) UnityEngine.Object.Destroy(m_Raw);
+            if (m_Y) UnityEngine.Object.Destroy(m_Y);
+            if (m_U) UnityEngine.Object.Destroy(m_U);
+            if (m_V) UnityEngine.Object.Destroy(m_V);
+            if (m_YuvMat) UnityEngine.Object.Destroy(m_YuvMat);
         }
     }
 }

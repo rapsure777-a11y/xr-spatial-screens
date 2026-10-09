@@ -98,9 +98,16 @@ namespace XrSpatial.App
                 if (src == null) { Tool.Say("Select a screen first (point at it and press the trigger in edit mode).", 4f); return; }
                 src.Restart(); Tool.Say("Reconnecting " + (src.Def.label ?? src.Def.id), 3f);
             });
+            if (RemoteHost.Active) Add(() => VideoMode.Hevc ? "Video: HEVC" : "Video: JPEG", () =>
+            {
+                // switch every screen between the proven JPEG stream and hardware-encoded HEVC (each screen's stream is reopened)
+                VideoMode.Hevc = !VideoMode.Hevc;
+                foreach (var d in new List<SourceDef>(Workspace.Sources)) Workspace.GetSource(d.id)?.Restart();
+                Tool.Say(VideoMode.Hevc ? "Video: HEVC (hardware encode on the PC)" : "Video: JPEG", 3f);
+            }, () => VideoMode.Hevc);
             if (RemoteHost.Active)
             {
-                Add(() => $"Volume - ({Mathf.RoundToInt(RemoteAudio.Gain * 100f)}%)", () => RemoteAudio.StepGain(-1));
+                Add(() => $"Volume -({Mathf.RoundToInt(RemoteAudio.Gain * 100f)}%)", () => RemoteAudio.StepGain(-1));
                 Add(() => "Volume +", () => RemoteAudio.StepGain(1));
             }
             Add(() => "Hide palette", () => SetVisible(false));

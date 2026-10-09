@@ -37,3 +37,6 @@ Tools/ClickTest/obj/
 
 # Unity/Gradle scratch
 /.utmp/
+
+# the PC tools' project files are part of the source (the *.csproj rule above is for Unity's generated ones)
+!Tools/**/*.csproj
