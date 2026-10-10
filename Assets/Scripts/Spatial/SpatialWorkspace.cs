@@ -46,9 +46,13 @@ namespace XrSpatial.Spatial
             Clear();
             var l = Layout.Load(LayoutDirectory, appKey) ?? new Layout { appKey = appKey };
             Layout = l;
-            foreach (var s in l.sources) EnsureSource(s);
+            // Generated test sources (patterns, depth and 3D tests) that no screen shows are dropped: they only pile up from the Test pattern button and each one costs frame time.
+            l.sources.RemoveAll(s => IsGenerated(s) && !l.surfaces.Exists(d => d.sourceId == s.id));
+            ActiveSourceId = l.surfaces.Count > 0 && l.FindSource(l.surfaces[0].sourceId) != null ? l.surfaces[0].sourceId : l.sources.Count > 0 ? l.sources[0].id : null;
+            // Only sources a screen uses are started (plus the active one, so New screen has something to show). The rest start when something asks for them (GetSource), so a layout
+            // with many remembered windows does not capture and decode all of them, on the PC and on the headset, for nothing.
             foreach (var d in l.surfaces) CreatePanel(d);
-            ActiveSourceId = l.sources.Count > 0 ? l.sources[0].id : null;
+            if (ActiveSourceId != null) GetSource(ActiveSourceId);
             Changed?.Invoke();
         }
 
@@ -75,7 +79,19 @@ namespace XrSpatial.Spatial
 
         // ------------------------------------------------------------------ sources
 
-        public ScreenSource GetSource(string id) => id != null && m_Sources.TryGetValue(id, out var s) ? s : null;
+        /// <summary>The live source for an id, starting it first if it is in the layout but not running yet.</summary>
+        public ScreenSource GetSource(string id)
+        {
+            if (id == null) return null;
+            if (m_Sources.TryGetValue(id, out var s)) return s;
+            var def = Layout.FindSource(id);
+            return def != null ? EnsureSource(def) : null;
+        }
+
+        /// <summary>How many sources are capturing right now (for tests and diagnostics).</summary>
+        public int LiveSourceCount => m_Sources.Count;
+
+        static bool IsGenerated(SourceDef s) => s.kind == "pattern" || s.kind == "depthtest" || s.kind == "sbstest";
         public IEnumerable<SourceDef> Sources => Layout.sources;
 
         /// <summary>Adds (or replaces, by id) a source definition and starts capturing it.</summary>
@@ -130,7 +146,7 @@ namespace XrSpatial.Spatial
 
         PanelView CreatePanel(SurfaceDef d)
         {
-            m_Sources.TryGetValue(d.sourceId ?? "", out var src);
+            var src = GetSource(d.sourceId);
             var p = PanelView.Create(Stage, d, src);
             m_Panels.Add(p);
             PanelAdded?.Invoke(p);

@@ -87,7 +87,7 @@ namespace XrSpatial.App
         /// <summary>Fetches the controller models through ControllerRenderModelFeature; retries every few seconds until both hands have one (controllers must be on).</summary>
         void TickModels()
         {
-            if (m_ModelsOff || (m_Model[0] && m_Model[1]) || !ControllerRenderModelFeature.Active || Time.unscaledTime < m_NextModelTry) return;
+            if (m_ModelsOff || PerfFlags.Has("nooutline") || (m_Model[0] && m_Model[1]) || !ControllerRenderModelFeature.Active || Time.unscaledTime < m_NextModelTry) return;
             m_NextModelTry = Time.unscaledTime + (m_ModelTries++ < 8 ? 2f : 10f);
             try
             {

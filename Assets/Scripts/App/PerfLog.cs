@@ -6,6 +6,22 @@ namespace XrSpatial.App
     /// Logs the app's own frame rate every 5 s: average, slowest frame and how many frames were slower than 90 Hz allows (11.1 ms). When the head is turned fast and the picture
     /// goes blocky, this tells whether the app missed frames (so the compositor filled in) or kept up (so the blockiness is the screens' own resolution).
     /// </summary>
+    /// <summary>Developer switches for finding what costs frame time: words in <c>perf.txt</c> in the app's data folder (nooutline, nopalette, nolayout). Absent file = everything normal.</summary>
+    public static class PerfFlags
+    {
+        static string s_Text;
+        public static bool Has(string word)
+        {
+            if (s_Text == null)
+            {
+                try { var f = System.IO.Path.Combine(Application.persistentDataPath, "perf.txt"); s_Text = System.IO.File.Exists(f) ? System.IO.File.ReadAllText(f).ToLowerInvariant() : ""; }
+                catch { s_Text = ""; }
+                if (s_Text.Length > 0) Debug.Log("[XrSpatial] perf flags: " + s_Text.Trim());
+            }
+            return s_Text.Contains(word);
+        }
+    }
+
     public sealed class PerfLog : MonoBehaviour
     {
         float m_Start, m_Worst; int m_Frames, m_Slow;

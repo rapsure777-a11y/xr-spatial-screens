@@ -167,7 +167,8 @@ namespace XrSpatial.App
             if (Settings.showControlPanel) { Control = gameObject.AddComponent<ControlPanel>(); Control.App = this; }
             SetBackground(Settings.background);
 
-            if (Settings.autoLoadLast) Workspace.LoadLayout(PlayerPrefs.GetString("xrss.lastkey", "default"));
+            if (PerfFlags.Has("nopalette")) Palette.SetVisible(false);
+            if (Settings.autoLoadLast && !PerfFlags.Has("nolayout")) Workspace.LoadLayout(PlayerPrefs.GetString("xrss.lastkey", "default"));
             else Workspace.LoadLayout("default");
         }
 
