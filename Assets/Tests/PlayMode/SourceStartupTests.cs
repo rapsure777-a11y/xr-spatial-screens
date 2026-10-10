@@ -55,5 +55,27 @@ namespace XrSpatial.Tests
             Assert.IsNotNull(ws.GetSource(win.id), "asking for a remembered source starts it on demand");
             Assert.AreEqual(2, ws.LiveSourceCount);
         }
+
+        [UnityTest]
+        public IEnumerator TestPatternButton_ReusesAnUnusedPattern_AndClearUnusedKeepsOnlyWhatScreensShow()
+        {
+            var ws = m_App.Workspace;
+            var corners = new[] { new Vector3(-1, 1, 2), new Vector3(1, 1, 2), new Vector3(1, -1, 2), new Vector3(-1, -1, 2) };
+            var shown = ws.AddSource(new SourceDef { kind = "pattern", label = "shown" });
+            ws.AddSurface(shown.id, corners);
+            int before = ws.Layout.sources.Count;
+            var first = m_App.AddPattern();                                    // pattern nobody shows yet
+            for (int i = 0; i < 5; i++) Assert.AreEqual(first.id, m_App.AddPattern().id, "pressing Test pattern again reuses the spare one");
+            Assert.AreEqual(before + 1, ws.Layout.sources.Count);
+            ws.AddSource(new SourceDef { kind = "window", processName = "NoSuchApp", titleContains = "x", label = "unused window" });
+            yield return null;
+
+            Assert.AreEqual(2, ws.ClearUnusedSources(), "the spare pattern and the unused window go");
+            Assert.AreEqual(1, ws.Layout.sources.Count);
+            Assert.AreEqual(shown.id, ws.Layout.sources[0].id);
+            Assert.AreEqual(1, ws.Layout.surfaces.Count, "screens are never touched");
+            Assert.AreEqual(shown.id, ws.ActiveSourceId, "the active source falls back to one that exists");
+            Assert.AreEqual(0, ws.ClearUnusedSources(), "nothing left to clear");
+        }
     }
 }

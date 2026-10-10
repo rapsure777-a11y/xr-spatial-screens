@@ -26,7 +26,7 @@ namespace XrSpatial.App
         public bool Visible { get; private set; } = true;
 
         const float W = 560f, Scale = 0.00055f;
-        float H = 1099f;                                              // 0.31 m x 0.48 m (the old 820 high panel needed about 850 for its 19 buttons, the last one hung below it); taller when the Labs row is shown
+        float H = 1162f;                                             // 0.31 m x 0.48 m (the old 820 high panel needed about 850 for its 19 buttons, the last one hung below it); taller when the Labs row is shown
         const int WindowsPerPage = 8;
         Canvas m_Canvas;
         RectTransform m_Rect;
@@ -132,6 +132,11 @@ namespace XrSpatial.App
             Add(() => "Capture window...", ShowWindows);
             Add(() => "Next source", Tool.CycleSource);
             Add(() => "Test pattern", () => OnAddPattern?.Invoke());
+            Add(() => "Clear unused", () =>
+            {
+                int n = Workspace.ClearUnusedSources();
+                Tool.Say(n > 0 ? $"Cleared {n} unused source{(n == 1 ? "" : "s")}. Screens are untouched." : "No unused sources to clear.", 4f);
+            });
             if (RemoteHost.Active) Add(() => "Reconnect screen", () =>
             {
                 // a frozen or blocky screen: close its stream and open a fresh one (the selected screen, or the active source)

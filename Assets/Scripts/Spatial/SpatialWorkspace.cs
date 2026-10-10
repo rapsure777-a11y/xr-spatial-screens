@@ -118,6 +118,33 @@ namespace XrSpatial.Spatial
             MarkDirty();
         }
 
+        /// <summary>Removes every source no screen uses (the active one is kept if it is the only one left to pick). Returns how many were removed.</summary>
+        public int ClearUnusedSources()
+        {
+            var used = new HashSet<string>();
+            foreach (var s in Layout.surfaces) used.Add(s.sourceId);
+            var unused = Layout.sources.FindAll(s => !used.Contains(s.id));
+            foreach (var s in unused)
+            {
+                Layout.sources.Remove(s);
+                if (m_Sources.TryGetValue(s.id, out var live)) { live.Dispose(); m_Sources.Remove(s.id); }
+            }
+            if (unused.Count > 0)
+            {
+                if (Layout.FindSource(ActiveSourceId) == null) ActiveSourceId = Layout.sources.Count > 0 ? Layout.sources[0].id : null;
+                MarkDirty();
+            }
+            return unused.Count;
+        }
+
+        /// <summary>An existing generated test pattern that no screen shows, so pressing Test pattern again reuses it instead of piling up copies.</summary>
+        public SourceDef UnusedPattern()
+        {
+            foreach (var s in Layout.sources)
+                if (s.kind == "pattern" && !Layout.surfaces.Exists(f => f.sourceId == s.id)) return s;
+            return null;
+        }
+
         ScreenSource EnsureSource(SourceDef def)
         {
             if (m_Sources.TryGetValue(def.id, out var s)) return s;

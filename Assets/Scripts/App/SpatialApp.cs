@@ -222,6 +222,8 @@ namespace XrSpatial.App
 
         public SourceDef AddPattern()
         {
+            var spare = Workspace.UnusedPattern();                              // pressing the button again must not add another copy
+            if (spare != null) { Workspace.ActiveSourceId = spare.id; return spare; }
             return Workspace.AddSource(new SourceDef { kind = "pattern", label = "Test pattern" });
         }
 
