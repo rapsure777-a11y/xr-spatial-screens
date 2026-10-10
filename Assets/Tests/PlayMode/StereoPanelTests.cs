@@ -97,6 +97,26 @@ namespace XrSpatial.Tests
         }
 
         [Test]
+        public void Shader_CropSelectsTheSbsFrame_SoBlackBarsAtTheSidesDoNotMisalignTheEyes()
+        {
+            Assume.That(Shader.Find("XrSpatial/Panel") != null);
+            // a pillar-boxed capture, like a 16:9 SBS video fullscreen on an ultrawide: [bar 0.2][left picture 0.2..0.5][right picture 0.5..0.8][bar 0.2]
+            var tex = new Texture2D(100, 8, TextureFormat.RGBA32, false, true) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
+            for (int y = 0; y < 8; y++) for (int x = 0; x < 100; x++) tex.SetPixel(x, y, x < 20 || x >= 80 ? Color.black : x < 50 ? Color.red : Color.blue);
+            tex.Apply();
+            var m = PanelMat(tex);
+            m.EnableKeyword("_SBS"); m.SetVector("_Stereo", StereoMath.ShaderParams(false, 0f));
+            // without a crop the left eye gets a black bar plus the left picture: this is the misalignment
+            Assert.Less(RenderPixel(m, new Vector2(0.1f, 0.5f)).r, 40, "uncropped: the left eye picture starts with the black bar");
+            // cropping the video area (x 0.2..0.8) puts the eyes back in line: the left eye is red across the whole panel
+            m.SetVector("_Crop", new Vector4(0.2f, 0f, 0.6f, 1f));
+            for (float u = 0.05f; u < 1f; u += 0.15f) AssertColour(RenderPixel(m, new Vector2(u, 0.5f)), Color.red, $"cropped left eye at u {u:0.00}");
+            m.SetVector("_Stereo", StereoMath.ShaderParams(true, 0f));
+            for (float u = 0.05f; u < 1f; u += 0.15f) AssertColour(RenderPixel(m, new Vector2(u, 0.5f)), Color.blue, $"cropped, swapped, at u {u:0.00}");
+            Object.DestroyImmediate(m); Object.DestroyImmediate(tex);
+        }
+
+        [Test]
         public void Shader_TheLargestConvergenceShift_NeverPullsInTheOtherEyesPicture()
         {
             Assume.That(Shader.Find("XrSpatial/Panel") != null);
@@ -164,7 +184,7 @@ namespace XrSpatial.Tests
             Assert.AreEqual(StereoMode.SbsHalf, panel.Def.stereo);
             Assert.IsTrue(mat.IsKeywordEnabled("_SBS"));
             Assert.IsFalse(panel.DepthActive, "depth is bypassed on a 3D screen");
-            Assert.AreEqual(cropBefore, mat.GetVector("_Crop"), "the saved crop is kept, only ignored while 3D is on");
+            Assert.AreEqual(cropBefore, mat.GetVector("_Crop"), "the crop stays: in 3D it selects the SBS frame inside the capture");
             Assert.AreEqual(cornersBefore, panel.Def.corners, "turning 3D on never moves or resizes the panel");
 
             m_App.Tool.ToggleSwapEyes();
@@ -191,6 +211,10 @@ namespace XrSpatial.Tests
             panel.Def.stereo = StereoMode.SbsHalf;
             var s = panel.UvToSource(new Vector2(1f, 0.5f));
             Assert.AreEqual(0.5f, s.x, 1e-5f, "the right edge of the panel is the right edge of the left-eye picture");
+            panel.Def.crop = new Rect(0.2f, 0f, 0.6f, 1f);
+            Assert.AreEqual(0.5f, panel.UvToSource(new Vector2(1f, 0.5f)).x, 1e-5f, "inside a crop 0.2..0.8 the left-eye picture ends at 0.5");
+            Assert.AreEqual(0.2f, panel.UvToSource(new Vector2(0f, 0.5f)).x, 1e-5f);
+            panel.Def.crop = new Rect(0, 0, 1, 1);
             Assert.AreEqual(0.5f, s.y, 1e-5f);
             panel.Def.swapEyes = true;
             Assert.AreEqual(1f, panel.UvToSource(new Vector2(1f, 0.5f)).x, 1e-5f);

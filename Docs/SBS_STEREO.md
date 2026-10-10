@@ -1,6 +1,6 @@
 # SBS stereo (optional 3D viewing mode) — branch `claude/sbs-stereo`
 
-Built 2026-10-10 from `claude/controller-polish` (head 9f6a3a5, whose controller outline and edge tilt were confirmed in the headset the same day). Status: **code and automated tests done; headset test pending.**
+Updated 2026-10-10 (crop-as-SBS-frame after a fullscreen/ultrawide report). Built from `claude/controller-polish` (head 9f6a3a5, whose controller outline and edge tilt were confirmed in the headset the same day). Status: **code and automated tests done; headset test pending.**
 
 ## What it is
 A per-panel viewing mode layered onto the existing flat panel. Capture, streaming, audio, passthrough, placement, sizing, controller interaction and Depth Lab are untouched. Modes: **Flat** (default, exactly the old path), **SBS Half**, **SBS Full**, plus **Swap eyes** and a small **3D depth** (convergence) shift.
@@ -19,7 +19,7 @@ Both sample identically (left half to the left eye, right half to the right eye)
 
 ## Interaction and crop limits
 - **Input** is unchanged in kind: pointer position maps onto the logical panel. In a 3D mode it maps onto one eye's picture (the left half, or the right half when swapped), through `PanelView.UvToSource`.
-- **Crop is off while 3D is on** (the Crop button and a crop drag refuse with a message). Reason: a crop is a rectangle of the whole source, but in SBS each eye needs the same sub-rectangle of its own half; mapping an arbitrary crop cleanly is ambiguous (what a crop of an SBS frame should mean), so for this version a 3D panel ignores its crop. The saved crop is kept and applies again when you go back to Flat.
+- **Crop selects the SBS frame.** In a 3D mode the panel's crop rectangle is the whole side-by-side frame inside the capture, and each eye reads its own half of THAT rectangle. This exists because a capture is often not exactly the video: a 16:9 video fullscreen on an ultrawide monitor (3440x1440) has black bars at both sides, and a windowed player has borders. Uncropped, the left half is then "bar + left picture" and the right half "right picture + bar", so the pictures are misaligned (headset symptom: you must cross your eyes). Fix: on a **Flat** screen use Crop to cut out just the video area (a new screen), then turn 3D on for the new screen. Crop is not offered on a screen that is already in a 3D mode (a drag there would pick a rectangle of one eye's half only). Fit picture and Lock aspect use the crop region's shape.
 - **Depth Lab is bypassed** on a 3D panel (mutually exclusive); going back to Flat lets it act again.
 - Saved with the layout (`stereo`, `swapEyes`, `stereoOffset`); layouts saved before this load as Flat.
 

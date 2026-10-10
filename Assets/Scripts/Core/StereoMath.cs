@@ -9,7 +9,7 @@ namespace XrSpatial.Core
     /// Side-by-side stereo maths (pure, no Unity objects). The source texture holds the left-eye picture in its left half and the right-eye picture in its right half
     /// (swapped if <c>swap</c>). Half-SBS squeezes each eye to half width, Full-SBS stores each eye at full width, so the two are sampled identically and differ only
     /// in the picture shape the panel must have: Half-SBS 1920x1080 is two squeezed 960x1080 pictures that display as one 16:9 picture per eye; Full-SBS 3840x1080 is
-    /// two 1920x1080 pictures, also 16:9 per eye. The eye windows are in source U (0..1); V always spans the whole source (stereo ignores the crop, see Docs/SBS_STEREO.md).
+    /// two 1920x1080 pictures, also 16:9 per eye. The eye windows are fractions of the SBS frame, which is the panel's crop rectangle of the source (the whole source when uncropped; the crop trims black bars or window borders off a capture).
     /// </summary>
     public static class StereoMath
     {
@@ -53,18 +53,19 @@ namespace XrSpatial.Core
         }
 
         /// <summary>Width / height a panel must have to show one eye's picture undistorted, from the source texture's own width / height.</summary>
-        public static float PanelAspect(StereoMode mode, float sourceAspect)
+        public static float PanelAspect(StereoMode mode, float regionAspect)
         {
+            float sourceAspect = regionAspect;                              // the SBS frame's own shape: the crop region of the source
             if (mode == StereoMode.SbsHalf) return sourceAspect;        // each eye is squeezed to half width; stretched back it is as wide as the whole source
             if (mode == StereoMode.SbsFull) return sourceAspect * 0.5f; // each eye is half the width at full scale
             return sourceAspect;
         }
 
-        /// <summary>Source rectangle (x, y, w, h normalised, origin top-left) that pointer positions map onto: the left-eye picture (or the right one when eyes are swapped), so a click on the panel lands where the same point of one eye's picture is.</summary>
-        public static Rect InputRect(StereoMode mode, bool swap)
+        /// <summary>Source rectangle (x, y, w, h normalised, origin top-left) that pointer positions map onto: the left-eye picture inside the crop (or the right one when eyes are swapped), so a click on the panel lands where the same point of one eye's picture is.</summary>
+        public static Rect InputRect(StereoMode mode, bool swap, Rect crop)
         {
-            if (!IsStereo(mode)) return new Rect(0f, 0f, 1f, 1f);
-            return new Rect(swap ? 0.5f : 0f, 0f, 0.5f, 1f);
+            if (!IsStereo(mode)) return crop;
+            return new Rect(crop.x + (swap ? 0.5f : 0f) * crop.width, crop.y, crop.width * 0.5f, crop.height);
         }
     }
 }

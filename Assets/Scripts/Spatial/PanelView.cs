@@ -119,7 +119,8 @@ namespace XrSpatial.Spatial
         {
             aspect = 0f;
             if (Source == null || !Source.HasFrame) return false;
-            aspect = StereoMath.IsStereo(Def.stereo) ? StereoMath.PanelAspect(Def.stereo, Source.Aspect) : Def.crop.width * Source.Aspect / Mathf.Max(0.001f, Def.crop.height);
+            float region = Def.crop.width * Source.Aspect / Mathf.Max(0.001f, Def.crop.height);          // the crop region's shape (the whole source when uncropped)
+            aspect = StereoMath.IsStereo(Def.stereo) ? StereoMath.PanelAspect(Def.stereo, region) : region;
             return aspect > 0.05f;
         }
 
@@ -254,7 +255,7 @@ namespace XrSpatial.Spatial
         }
 
         /// <summary>Panel UV -> position in the source image (0..1, origin top-left), taking the crop into account.</summary>
-        public Vector2 UvToSource(Vector2 uv) => QuadMath.PanelUvToSource(uv, StereoMath.IsStereo(Def.stereo) ? StereoMath.InputRect(Def.stereo, Def.swapEyes) : Def.crop);
+        public Vector2 UvToSource(Vector2 uv) => QuadMath.PanelUvToSource(uv, StereoMath.InputRect(Def.stereo, Def.swapEyes, Def.crop));
 
         void OnDestroy()
         {

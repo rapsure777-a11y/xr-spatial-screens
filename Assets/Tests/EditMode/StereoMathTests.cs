@@ -83,9 +83,16 @@ namespace XrSpatial.Tests
         [Test]
         public void InputRect_IsTheWholeSourceWhenFlat_AndOneEyeHalfWhenStereo()
         {
-            Assert.AreEqual(new Rect(0, 0, 1, 1), StereoMath.InputRect(StereoMode.Flat, false));
-            Assert.AreEqual(new Rect(0, 0, 0.5f, 1), StereoMath.InputRect(StereoMode.SbsHalf, false));
-            Assert.AreEqual(new Rect(0.5f, 0, 0.5f, 1), StereoMath.InputRect(StereoMode.SbsFull, true));
+            var whole = new Rect(0, 0, 1, 1);
+            Assert.AreEqual(whole, StereoMath.InputRect(StereoMode.Flat, false, whole));
+            Assert.AreEqual(new Rect(0, 0, 0.5f, 1), StereoMath.InputRect(StereoMode.SbsHalf, false, whole));
+            Assert.AreEqual(new Rect(0.5f, 0, 0.5f, 1), StereoMath.InputRect(StereoMode.SbsFull, true, whole));
+            // inside a crop (the video area of a pillar-boxed capture): the eye half of THAT area
+            var crop = new Rect(0.2f, 0.1f, 0.6f, 0.8f);
+            Assert.AreEqual(crop, StereoMath.InputRect(StereoMode.Flat, false, crop));
+            var left = StereoMath.InputRect(StereoMode.SbsHalf, false, crop);
+            Assert.AreEqual(0.2f, left.x, Eps); Assert.AreEqual(0.3f, left.width, Eps); Assert.AreEqual(0.1f, left.y, Eps); Assert.AreEqual(0.8f, left.height, Eps);
+            Assert.AreEqual(0.5f, StereoMath.InputRect(StereoMode.SbsHalf, true, crop).x, Eps);
         }
 
         [Test]

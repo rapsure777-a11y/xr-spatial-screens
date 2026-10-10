@@ -74,12 +74,14 @@ Shader "XrSpatial/Panel"
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
                 float2 p = i.uvq.xy / i.uvq.z;                                  // picture coordinates: u right, v up
             #ifdef _SBS
-                // side-by-side stereo: each eye reads the 0.5 wide window of its own half of the source, over the whole height (the crop is ignored).
-                // _Stereo = (left eye window start, right eye window start, left eye half start, right eye half start). unity_StereoEyeIndex: 0 left eye, 1 right eye.
+                // side-by-side stereo: the crop rectangle selects the whole SBS frame inside the capture (trim black bars or window borders with it); each eye reads the
+                // 0.5 wide window of its own half of THAT rectangle. Without a crop it is the whole source.
+                // _Stereo = (left eye window start, right eye window start, left eye half start, right eye half start), as fractions of the crop width. unity_StereoEyeIndex: 0 left eye, 1 right eye.
                 bool rightEye = unity_StereoEyeIndex != 0;
                 float x0 = rightEye ? _Stereo.y : _Stereo.x;
                 float h0 = rightEye ? _Stereo.w : _Stereo.z;
-                float2 src = float2(clamp(x0 + p.x * 0.5, h0 + 0.0005, h0 + 0.4995), 1.0 - p.y);   // clamped to the eye's own half so a convergence shift never pulls in the other eye
+                float ex = clamp(x0 + p.x * 0.5, h0 + 0.0005, h0 + 0.4995);                        // clamped to the eye's own half so a convergence shift never pulls in the other eye
+                float2 src = float2(_Crop.x + ex * _Crop.z, _Crop.y + (1.0 - p.y) * _Crop.w);
             #else
                 float2 src = float2(_Crop.x + p.x * _Crop.z, _Crop.y + (1.0 - p.y) * _Crop.w);
             #endif

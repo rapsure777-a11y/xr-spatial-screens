@@ -119,7 +119,7 @@ namespace XrSpatial.Spatial
 
         public void BeginCrop()
         {
-            if (Selected && StereoMath.IsStereo(Selected.Def.stereo)) { Say("Crop is off while 3D is on. Turn 3D off (Flat) to crop this screen.", 5f); return; }
+            if (Selected && StereoMath.IsStereo(Selected.Def.stereo)) { Say("Cut the video area out on a Flat screen, then turn 3D on for the new screen (crop here would only show one eye).", 6f); return; }
             CancelDrag(); m_Placed.Clear();
             Mode = ToolMode.Crop; InteractMode = false;
             Say("Drag a rectangle on a screen to cut out a new panel", 5f);
@@ -201,7 +201,7 @@ namespace XrSpatial.Spatial
             if (src == null || !src.HasFrame) { text = "No picture yet to measure"; return false; }
             var c = Selected.Def.crop;
             bool sbs = StereoMath.IsStereo(Selected.Def.stereo);
-            float pw = sbs ? src.Width * 0.5f : c.width * src.Width, ph = sbs ? src.Height : c.height * src.Height;   // SBS: one eye's picture
+            float pw = (sbs ? 0.5f : 1f) * c.width * src.Width, ph = c.height * src.Height;   // SBS: one eye's picture inside the crop
             float ppd = HeadsetPpd != null ? HeadsetPpd() : 20f;
             var q = Selected.Def.corners;
             float dist = HeadPosition != null ? Vector3.Distance(HeadPosition(), QuadMath.Centroid(q)) : PlaceDistance;
@@ -533,7 +533,7 @@ namespace XrSpatial.Spatial
             if (hover) hover.SetHighlight(PanelHighlight.Hover);
             if (m_Drag != Drag.Crop)
             {
-                if (s.triggerDown && hover && StereoMath.IsStereo(hover.Def.stereo)) Say("Crop is off on a 3D screen. Turn 3D off (Flat) first.", 4f);
+                if (s.triggerDown && hover && StereoMath.IsStereo(hover.Def.stereo)) Say("Crop on a Flat screen, then turn 3D on for the new screen.", 4f);
                 else if (s.triggerDown && hover) { m_Drag = Drag.Crop; m_DragPanel = hover; m_CropA = hover.UvToSource(uv); m_CropB = m_CropA; Pointer.Haptic(0.3f, 0.04f); }
                 if (s.secondaryDown || s.menuDown) SetIdle();
                 return;
