@@ -1,5 +1,7 @@
 # CURRENT STATE (XR Spatial Screens)
 
+> **Superseded:** this file is from session 1 (2026-10-06). The current spec is `Docs/SPEC_2026-10-10.md`.
+
 Updated: 2026-10-06 (session 1). Owner/integrator: Claude. Specialists: Codex (branches `codex/<task>`, reviewed before merging; Codex cannot be launched from this session, so no Codex branches exist yet).
 
 - **Branch:** `develop` (integration). `main` = stable only (still the scaffold; promote after the first headset test).
