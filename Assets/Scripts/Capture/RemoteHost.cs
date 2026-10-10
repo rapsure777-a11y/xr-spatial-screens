@@ -11,6 +11,18 @@ namespace XrSpatial.Capture
 {
     public enum StreamState { Opening, Live, Ended, Failed }
 
+    /// <summary>Where Windows has the mouse cursor, as the PC host last reported it for one stream (see CursorReporter on the host).</summary>
+    public struct CursorSample
+    {
+        public byte flags, shape;
+        public float u, v;                                     // position in the streamed window, 0..1, top-left origin (valid when Inside)
+        public int screenX, screenY;                           // the desktop pixel Windows reports
+        public long receivedMs;
+        public bool Inside => (flags & Core.CursorMath.FlagInside) != 0;
+        public bool Showing => (flags & Core.CursorMath.FlagShowing) != 0;
+        public bool Seen => receivedMs != 0;
+    }
+
     /// <summary>
     /// Connection from the headset app to the PC host (Tools/XrssStream). One TCP connection carries the PC's window list, any number of window streams (JPEG frames),
     /// and the pointer events going back. Wire format: see Tools/XrssStream/Program.cs. The host address is 127.0.0.1:5600, reached through `adb reverse`.
@@ -20,12 +32,13 @@ namespace XrSpatial.Capture
     {
         public const string Address = "127.0.0.1";
         public const int Port = 5600;
-        const uint FrameMagic = 0x32535258, ListMagic = 0x4C535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258, LayoutMagic = 0x59535258, DepthMagic = 0x44535258;       // 'XRS2', 'XRSL', 'XRSS', 'XRSA', 'XRSY', 'XRSD'
+        const uint FrameMagic = 0x32535258, ListMagic = 0x4C535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258, LayoutMagic = 0x59535258, DepthMagic = 0x44535258, CursorMagic = 0x43535258;       // 'XRS2', 'XRSL', 'XRSS', 'XRSA', 'XRSY', 'XRSD', 'XRSC'
 
         sealed class Stream
         {
             public long hwnd; public StreamState state = StreamState.Opening;
             public byte[] latest; public int w, h; public uint seq; public long received;
+            public CursorSample cursor;
             public byte[] depth; public int dw, dh, depthSeq;                        // Depth Lab: the newest depth picture the PC sent (255 = near)
         }
 
@@ -49,6 +62,7 @@ namespace XrSpatial.Capture
         {
             if (Active) return;
             Active = true; s_Quit = false; State = "connecting";
+            s_CursorMode = (Core.PcCursorMode)Mathf.Clamp(PlayerPrefs.GetInt("xrss.pccursor", 0), 0, 2);
             s_Thread = new Thread(Run) { IsBackground = true, Name = "RemoteHost" }; s_Thread.Start();
             s_Timer = new Thread(() => { while (!s_Quit) { Thread.Sleep(4000); if (Connected) RequestList(); } }) { IsBackground = true, Name = "RemoteHostList" }; s_Timer.Start();
         }
@@ -71,6 +85,7 @@ namespace XrSpatial.Capture
                     Debug.Log("[XrSpatial] remote: connected to the PC host");
                     RequestList();
                     SendSound();
+                    SendCursorRequest();
                     lock (s_Lock) foreach (var kv in s_Streams) { kv.Value.state = StreamState.Opening; SendOpen(kv.Key, kv.Value.hwnd); }     // streams wanted before the (re)connect
                     while (!s_Quit)
                     {
@@ -99,6 +114,13 @@ namespace XrSpatial.Capture
                                 if (len == 0) DepthAvailable = false;                                          // this PC cannot make depth
                                 else { DepthAvailable = true; if (s_Streams.TryGetValue(id, out var s) && len == dw * dh) { s.depth = data; s.dw = dw; s.dh = dh; s.depthSeq++; } }
                             }
+                        }
+                        else if (magic == CursorMagic)
+                        {
+                            Read(net, hdr, 20);
+                            ushort id = BitConverter.ToUInt16(hdr, 0);
+                            var cs = new CursorSample { flags = hdr[2], shape = hdr[3], u = BitConverter.ToSingle(hdr, 4), v = BitConverter.ToSingle(hdr, 8), screenX = BitConverter.ToInt32(hdr, 12), screenY = BitConverter.ToInt32(hdr, 16), receivedMs = NowMs };
+                            lock (s_Lock) { if (s_Streams.TryGetValue(id, out var s)) s.cursor = cs; }
                         }
                         else if (magic == ListMagic)
                         {
@@ -137,7 +159,7 @@ namespace XrSpatial.Capture
                 }
                 catch (Exception e) { if (!s_Quit) { State = "waiting for the PC host (" + e.GetType().Name + ")"; } }
                 Connected = false; s_Net = null;
-                lock (s_Lock) foreach (var s in s_Streams.Values) if (s.state == StreamState.Live) s.state = StreamState.Opening;
+                lock (s_Lock) foreach (var s in s_Streams.Values) { if (s.state == StreamState.Live) s.state = StreamState.Opening; s.cursor = default; }       // a cursor from before the drop must not stay drawn
                 if (!s_Quit) Thread.Sleep(1000);
             }
         }
@@ -188,6 +210,43 @@ namespace XrSpatial.Capture
         public static bool SoundEnabled { get; private set; } = true;
         public static void SetSound(bool on) { SoundEnabled = on; if (!on) RemoteAudio.Reset(); SendSound(); }
         static void SendSound() => Write(new[] { (byte)'S', (byte)(SoundEnabled ? 1 : 0) });
+
+        // ------------------------------------------------------------------ PC cursor overlay (off by default: with it off the host reports nothing and the headset draws nothing)
+
+        static Core.PcCursorMode s_CursorMode;                      // loaded in Enable (PlayerPrefs only works on the main thread)
+
+        /// <summary>Whether and how the PC's mouse cursor is drawn on screens. Saved.</summary>
+        public static Core.PcCursorMode PcCursor => s_CursorMode;
+
+        public static void SetPcCursor(Core.PcCursorMode mode)
+        {
+            s_CursorMode = mode; PlayerPrefs.SetInt("xrss.pccursor", (int)mode);
+            SendCursorRequest();
+        }
+
+        static void SendCursorRequest() => Write(new[] { (byte)'C', (byte)(s_CursorMode != Core.PcCursorMode.Off ? 1 : 0) });
+
+        /// <summary>The newest cursor report for a stream, if the host has sent one.</summary>
+        public static bool TryGetCursor(ushort id, out CursorSample c)
+        {
+            lock (s_Lock) { if (s_Streams.TryGetValue(id, out var s) && s.cursor.Seen) { c = s.cursor; return true; } }
+            c = default; return false;
+        }
+
+        /// <summary>Tests only: stands in for a report from the PC host.</summary>
+        public static void SetCursorForTest(ushort id, CursorSample c)
+        {
+            if (c.receivedMs == 0) c.receivedMs = 1;
+            lock (s_Lock) { if (!s_Streams.TryGetValue(id, out var s)) s_Streams[id] = s = new Stream(); s.cursor = c; }
+        }
+
+        /// <summary>The last pointer event the controller sent (for the Labs cursor readout): stream, source position, and when.</summary>
+        /// <summary>Milliseconds on a monotonic clock, never 0 (0 means "never" in the cursor and pointer records).</summary>
+        public static long NowMs => System.Math.Max(1L, System.Diagnostics.Stopwatch.GetTimestamp() * 1000L / System.Diagnostics.Stopwatch.Frequency);
+
+        public static ushort LastPointerStream { get; private set; }
+        public static Vector2 LastPointerSource { get; private set; }
+        public static long LastPointerMs { get; private set; }
 
         /// <summary>Asks the PC for its window list and completes when it arrives (or with the last known list after a few seconds).</summary>
         public static Task<List<CapturableWindow>> ListAsync()
@@ -267,6 +326,7 @@ namespace XrSpatial.Capture
             var m = new byte[16]; m[0] = (byte)'P'; BitConverter.GetBytes(id).CopyTo(m, 1); m[3] = kind;
             BitConverter.GetBytes(u).CopyTo(m, 4); BitConverter.GetBytes(v).CopyTo(m, 8); BitConverter.GetBytes(wheel).CopyTo(m, 12);
             Write(m);
+            LastPointerStream = id; LastPointerSource = new Vector2(u, v); LastPointerMs = NowMs;
             if (kind != 0) { s_SentInputs++; LastInputSent = $"#{s_SentInputs} stream {id} kind {kind} at {u:0.000},{v:0.000}"; }
         }
 

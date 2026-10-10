@@ -20,6 +20,7 @@ using System.Threading;
 //     list   'XRSL' u32, jsonLength u32, then UTF-8 JSON: the capturable windows (what XrssCapture --list prints)
 //     status 'XRSS' u32, stream u16, state u8 (0 ended, 1 opened, 2 failed), pad u8   (12 bytes)
 //     audio  'XRSA' u32, pcmLength u32, sampleRate u32, channels u16 (2), pad u16, then 16-bit little-endian interleaved PCM  (16-byte header; the PC's output, in ~10 ms chunks)
+//     cursor 'XRSC' u32, stream u16, flags u8 (1 inside this window and uncovered, 2 Windows shows a cursor), shape u8, u f32, v f32, screenX i32, screenY i32  (24 bytes; only while asked for with 'C')
 //     layout 'XRSY' u32, nameLength u16, pad u16, dataLength u32, then the name and the layout file (one message per backed-up layout)
 //   client -> server
 //     'Y' nameLength u8, name, dataLength u32, data   back up a layout file on the PC (name: letters, digits . _ - only)
@@ -32,6 +33,7 @@ using System.Threading;
 //     'A' stream u16, seq u32              frame shown (round-trip measurement)
 //     'P' stream u16, kind u8, u f32, v f32, wheel f32   pointer event on the stream's window (see InputInjector)
 //     'L' stream u16                       pointer lost: release anything held
+//     'C' on u8                            start (1) or stop (0) reporting where Windows has the mouse cursor ('XRSC' messages); off by default
 //     'K' stream u16, kind u8, code u32    key: kind 0 type the character (UTF-16 code), 1 key down, 2 key up (Windows virtual-key code); the window is brought to the front first
 static unsafe class Program
 {
@@ -299,6 +301,7 @@ sealed unsafe class Session
                         }
                     case 'L': { Fill(2); Find(BitConverter.ToUInt16(b, 0))?.Injector.Handle(InputInjector.Lost, 0, 0, 0); break; }
                     case 'S': { Fill(1); SetAudio(b[0] != 0); break; }
+                    case 'C': { Fill(1); SetCursor(b[0] != 0); break; }
                     case 'D':
                         {
                             Fill(3); var s = Find(BitConverter.ToUInt16(b, 0)); int fps = Math.Clamp((int)b[2], 0, 15);
@@ -352,6 +355,22 @@ sealed unsafe class Session
         catch (Exception e) { Console.WriteLine("layout backup send failed: " + e.Message); m_Gone = true; }
     }
 
+    CursorReporter m_Cursor;
+
+    /// <summary>Starts or stops telling the headset where the PC's mouse cursor is. Off by default; the reporter only reads the cursor.</summary>
+    void SetCursor(bool on)
+    {
+        lock (m_StreamsLock)
+        {
+            if (on && m_Cursor == null)
+            {
+                try { m_Cursor = new CursorReporter(() => { lock (m_StreamsLock) { var l = new List<(ushort, long)>(m_Streams.Count); foreach (var s in m_Streams.Values) if (s.Ready && !s.Ended) l.Add((s.Id, s.Hwnd)); return l; } }, m => { try { Send(m); } catch { m_Gone = true; } }); }
+                catch (Exception e) { Console.WriteLine("cursor reporting failed: " + e.Message); }
+            }
+            else if (!on && m_Cursor != null) { m_Cursor.Dispose(); m_Cursor = null; }
+        }
+    }
+
     AudioSender m_Audio;
     long m_AudioStatAt;
 
@@ -398,6 +417,7 @@ sealed unsafe class Session
         {
             if (m_Streams.TryGetValue(id, out var old)) { m_Streams.Remove(id); old.Dispose(); }
             var s = new StreamState(id, hwnd, m_Port);
+            m_Cursor?.Forget(id);
             try { s.StartCapture(); m_Streams[id] = s; Console.WriteLine($"stream {id}: opening window {hwnd}"); }
             catch (Exception e) { Console.WriteLine($"stream {id}: cannot start the capture helper: {e.Message}"); SendStatus(id, 2); }
         }
@@ -457,7 +477,7 @@ sealed unsafe class Session
         }
         finally
         {
-            SetAudio(false);
+            SetAudio(false); SetCursor(false);
             StreamState[] all; lock (m_StreamsLock) { all = new StreamState[m_Streams.Count]; m_Streams.Values.CopyTo(all, 0); m_Streams.Clear(); }
             foreach (var s in all) s.Dispose();
         }

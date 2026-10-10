@@ -184,6 +184,29 @@ namespace XrSpatial.Spatial
         TextMesh m_ClosedLabel;
         bool m_ClosedShown;
 
+        /// <summary>The PC mouse cursor drawn on this screen; null unless the PC cursor setting is on.</summary>
+        public PanelCursor Cursor { get; private set; }
+
+        /// <summary>Tests only: pretend this panel shows the PC stream with this id (-1 = use the real source).</summary>
+        public int CursorStreamOverride = -1;
+
+        /// <summary>The PC stream this panel shows, if it shows one that is still open.</summary>
+        public bool CursorStream(out ushort id)
+        {
+            if (CursorStreamOverride >= 0) { id = (ushort)CursorStreamOverride; return true; }
+            var nb = Source != null ? Source.Backend as NetworkBackend : null;
+            id = nb != null && !nb.HasEnded ? nb.StreamId : (ushort)0;
+            return nb != null && !nb.HasEnded;
+        }
+
+        void UpdateCursor()
+        {
+            var mode = RemoteHost.PcCursor;
+            if (mode == PcCursorMode.Off) { if (Cursor != null) { Cursor.Destroy(); Cursor = null; } return; }
+            if (Cursor == null) Cursor = new PanelCursor(this);
+            Cursor.Tick(mode);
+        }
+
         void LateUpdate()
         {
             if (Source != null && Source.View) m_Material.SetTexture(MainTex, Source.View);
@@ -194,6 +217,7 @@ namespace XrSpatial.Spatial
             else if (m_ClosedLabel) m_ClosedLabel.gameObject.SetActive(false);
             if (m_AppliedStereo != Def.stereo || m_AppliedSwap != Def.swapEyes || m_AppliedOffset != Def.stereoOffset) ApplyStereo();
             UpdateDepth();
+            if (Cursor != null || RemoteHost.PcCursor != PcCursorMode.Off) UpdateCursor();
         }
 
         /// <summary>"Window closed" text centred on a dimmed panel, facing the viewer's side of the panel, sized from the panel's width.</summary>
@@ -259,6 +283,7 @@ namespace XrSpatial.Spatial
 
         void OnDestroy()
         {
+            Cursor?.Destroy();
             if (m_DepthMesh) Destroy(m_DepthMesh);
             if (m_DepthMaterial) Destroy(m_DepthMaterial);
             if (m_Mesh) Destroy(m_Mesh);

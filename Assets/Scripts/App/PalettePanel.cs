@@ -26,7 +26,7 @@ namespace XrSpatial.App
         public bool Visible { get; private set; } = true;
 
         const float W = 560f, Scale = 0.00055f;
-        float H = 1162f;                                             // 0.31 m x 0.48 m (the old 820 high panel needed about 850 for its 19 buttons, the last one hung below it); taller when the Labs row is shown
+        float H = 1225f;                                             // 0.31 m x 0.48 m (the old 820 high panel needed about 850 for its 19 buttons, the last one hung below it); taller when the Labs row is shown
         const int WindowsPerPage = 8;
         Canvas m_Canvas;
         RectTransform m_Rect;
@@ -90,7 +90,7 @@ namespace XrSpatial.App
         void Build()
         {
             m_LabsEnabled = System.IO.File.Exists(System.IO.Path.Combine(Application.persistentDataPath, "depthlab.flag"));
-            if (m_LabsEnabled) H += 470f;
+            if (m_LabsEnabled) H += 590f;
             m_Font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             m_Canvas = gameObject.AddComponent<Canvas>();
             m_Canvas.renderMode = RenderMode.WorldSpace;
@@ -166,6 +166,7 @@ namespace XrSpatial.App
             Section("INPUT"); Row(2);
             Add(() => Tool.InteractMode ? "Interact: ON" : "Interact: off", Tool.ToggleInteract, () => Tool.InteractMode);
             Add(() => Tool.TouchPlacement ? "Points: touch" : "Points: laser", Tool.ToggleTouch);
+            if (RemoteHost.Active) Add(() => "PC cursor: " + CursorMath.Name(RemoteHost.PcCursor), () => RemoteHost.SetPcCursor(CursorMath.Next(RemoteHost.PcCursor)), () => RemoteHost.PcCursor != PcCursorMode.Off);
 
             if (RemoteHost.Active)
             {
@@ -277,6 +278,12 @@ namespace XrSpatial.App
                 var rd = Txt("SizingReadout", m_Rect, new Vector2(Style.Margin + 2, y - 126), new Vector2(full - 4, 126), 18, TextAnchor.UpperLeft, Style.Text);
                 m_LabsDecor.Add(rd.gameObject); m_LabsLive.Add((rd, () => Tool.SizingReport(out string rt, out _) ? "SIZING  " + rt : "SIZING  " + rt));
                 y -= 126 + 6;
+            }
+            {
+                // PC cursor readout (cursor diagnostic): where Windows has the mouse on the selected screen, and how far the controller's aim is from it
+                var cr = Txt("CursorReadout", m_Rect, new Vector2(Style.Margin + 2, y - 110), new Vector2(full - 4, 110), 18, TextAnchor.UpperLeft, Style.Text);
+                m_LabsDecor.Add(cr.gameObject); m_LabsLive.Add((cr, () => CursorReadout.Build(Tool.Selected ?? Tool.InteractPanel, Tool)));
+                y -= 110 + 6;
             }
             m_Labs.Add(MakeBtn(new Vector2(Style.Margin, 38), new Vector2(full, 70), () => "Back", ShowMain, null));
         }
