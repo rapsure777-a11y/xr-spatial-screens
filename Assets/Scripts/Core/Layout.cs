@@ -35,11 +35,17 @@ namespace XrSpatial.Core
         /// <summary>Forward pointer clicks on this panel to the source application.</summary>
         public bool interactive = true;
         [Range(0.05f, 1f)] public float opacity = 1f;
+        /// <summary>Optional side-by-side 3D viewing (Flat = off, the default; older saved layouts have no such field and load as Flat).</summary>
+        public StereoMode stereo = StereoMode.Flat;
+        /// <summary>Swap which half of the source goes to which eye (for sources encoded right-eye first).</summary>
+        public bool swapEyes;
+        /// <summary>Convergence shift as a fraction of one eye's picture width, within +-StereoMath.MaxOffset; 0 is the source's own stereo.</summary>
+        public float stereoOffset;
 
         public SurfaceDef Clone() => new SurfaceDef
         {
             id = id, sourceId = sourceId, label = label, corners = (Vector3[])corners.Clone(), crop = crop,
-            visible = visible, interactive = interactive, opacity = opacity,
+            visible = visible, interactive = interactive, opacity = opacity, stereo = stereo, swapEyes = swapEyes, stereoOffset = stereoOffset,
         };
     }
 

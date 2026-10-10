@@ -10,6 +10,7 @@ Shader "XrSpatial/Panel"
     {
         _MainTex ("Source", 2D) = "black" {}
         _Crop ("Crop (x y w h, top-left origin)", Vector) = (0, 0, 1, 1)
+        _Stereo ("SBS (left window x, right window x, left half x, right half x)", Vector) = (0, 0.5, 0, 0.5)
         _Opacity ("Opacity", Range(0, 1)) = 1
         _Brightness ("Brightness", Range(0.2, 2)) = 1
         _Tint ("Tint", Color) = (1, 1, 1, 1)
@@ -30,12 +31,14 @@ Shader "XrSpatial/Panel"
             #pragma vertex Vert
             #pragma fragment Frag
             #pragma multi_compile_instancing
+            #pragma multi_compile_local _ _SBS
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
             TEXTURE2D(_MainTex); SAMPLER(sampler_MainTex);
             CBUFFER_START(UnityPerMaterial)
                 float4 _MainTex_ST;
                 float4 _Crop;
+                float4 _Stereo;
                 half _Opacity;
                 half _Brightness;
                 half4 _Tint;
@@ -70,7 +73,16 @@ Shader "XrSpatial/Panel"
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
                 float2 p = i.uvq.xy / i.uvq.z;                                  // picture coordinates: u right, v up
+            #ifdef _SBS
+                // side-by-side stereo: each eye reads the 0.5 wide window of its own half of the source, over the whole height (the crop is ignored).
+                // _Stereo = (left eye window start, right eye window start, left eye half start, right eye half start). unity_StereoEyeIndex: 0 left eye, 1 right eye.
+                bool rightEye = unity_StereoEyeIndex != 0;
+                float x0 = rightEye ? _Stereo.y : _Stereo.x;
+                float h0 = rightEye ? _Stereo.w : _Stereo.z;
+                float2 src = float2(clamp(x0 + p.x * 0.5, h0 + 0.0005, h0 + 0.4995), 1.0 - p.y);   // clamped to the eye's own half so a convergence shift never pulls in the other eye
+            #else
                 float2 src = float2(_Crop.x + p.x * _Crop.z, _Crop.y + (1.0 - p.y) * _Crop.w);
+            #endif
                 half4 c = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, src);
                 half3 rgb = c.rgb * _Brightness * _Tint.rgb;
                 if (_ShowEdge > 0.5)

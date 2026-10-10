@@ -27,7 +27,7 @@ namespace XrSpatial.Spatial
         Material m_HandleMat, m_LineMat;
         int m_HoverCorner = -1;
         static readonly int MainTex = Shader.PropertyToID("_MainTex"), Crop = Shader.PropertyToID("_Crop"), Opacity = Shader.PropertyToID("_Opacity"),
-            ShowEdge = Shader.PropertyToID("_ShowEdge"), Tint = Shader.PropertyToID("_Tint");
+            ShowEdge = Shader.PropertyToID("_ShowEdge"), Tint = Shader.PropertyToID("_Tint"), StereoVec = Shader.PropertyToID("_Stereo");
 
         public static PanelView Create(Transform parent, SurfaceDef def, ScreenSource source)
         {
@@ -91,6 +91,7 @@ namespace XrSpatial.Spatial
             m_Material.SetVector(Crop, new Vector4(Def.crop.x, Def.crop.y, Def.crop.width, Def.crop.height));
             m_Material.SetFloat(Opacity, Def.opacity);
             m_Renderer.enabled = Def.visible;
+            ApplyStereo();
             for (int i = 0; i < 4; i++) m_Outline.SetPosition(i, q[i]);
             LayoutHandles();
         }
@@ -98,6 +99,29 @@ namespace XrSpatial.Spatial
         /// <summary>Points this panel at a new live source (after the source was replaced).</summary>
         public void Rebind(ScreenSource source) { Source = source; }
 
+
+        // ------------------------------------------------------------------ SBS stereo (optional; the flat shader path is the same shader with the _SBS keyword off)
+
+        StereoMode m_AppliedStereo; bool m_AppliedSwap; float m_AppliedOffset;
+
+        /// <summary>Pushes the panel's 3D settings to its material. The keyword is only on while the panel is in an SBS mode, so a Flat panel runs the exact original shader variant.</summary>
+        public void ApplyStereo()
+        {
+            var mode = Def.stereo;
+            bool on = StereoMath.IsStereo(mode);
+            if (on) m_Material.SetVector(StereoVec, StereoMath.ShaderParams(Def.swapEyes, Def.stereoOffset));
+            if (on) m_Material.EnableKeyword("_SBS"); else m_Material.DisableKeyword("_SBS");
+            m_AppliedStereo = mode; m_AppliedSwap = Def.swapEyes; m_AppliedOffset = Def.stereoOffset;
+        }
+
+        /// <summary>The picture shape (width / height) this panel should have, honouring crop (Flat) or the eye picture (SBS). False while the source has no picture.</summary>
+        public bool PictureAspect(out float aspect)
+        {
+            aspect = 0f;
+            if (Source == null || !Source.HasFrame) return false;
+            aspect = StereoMath.IsStereo(Def.stereo) ? StereoMath.PanelAspect(Def.stereo, Source.Aspect) : Def.crop.width * Source.Aspect / Mathf.Max(0.001f, Def.crop.height);
+            return aspect > 0.05f;
+        }
 
         // ------------------------------------------------------------------ Depth Lab (optional 2.5D path; the flat mesh and material above are never edited)
 
@@ -112,7 +136,7 @@ namespace XrSpatial.Spatial
 
         void UpdateDepth()
         {
-            bool want = DepthLab.Enabled && Source != null && Def.visible && Source.DepthMap != null;
+            bool want = DepthLab.Enabled && !StereoMath.IsStereo(Def.stereo) && Source != null && Def.visible && Source.DepthMap != null;
             if (!want) { if (m_DepthActive) LeaveDepth(); return; }
             if (!m_DepthActive && !EnterDepth()) return;
             var q = Def.corners;
@@ -167,6 +191,7 @@ namespace XrSpatial.Spatial
             if (closed != m_ClosedShown) { m_ClosedShown = closed; m_Material.SetColor(Tint, closed ? new Color(0.28f, 0.14f, 0.14f, 1f) : Color.white); }
             if (closed) UpdateClosedLabel();
             else if (m_ClosedLabel) m_ClosedLabel.gameObject.SetActive(false);
+            if (m_AppliedStereo != Def.stereo || m_AppliedSwap != Def.swapEyes || m_AppliedOffset != Def.stereoOffset) ApplyStereo();
             UpdateDepth();
         }
 
@@ -229,7 +254,7 @@ namespace XrSpatial.Spatial
         }
 
         /// <summary>Panel UV -> position in the source image (0..1, origin top-left), taking the crop into account.</summary>
-        public Vector2 UvToSource(Vector2 uv) => QuadMath.PanelUvToSource(uv, Def.crop);
+        public Vector2 UvToSource(Vector2 uv) => QuadMath.PanelUvToSource(uv, StereoMath.IsStereo(Def.stereo) ? StereoMath.InputRect(Def.stereo, Def.swapEyes) : Def.crop);
 
         void OnDestroy()
         {

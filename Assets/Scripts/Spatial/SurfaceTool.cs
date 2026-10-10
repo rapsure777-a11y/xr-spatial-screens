@@ -119,6 +119,7 @@ namespace XrSpatial.Spatial
 
         public void BeginCrop()
         {
+            if (Selected && StereoMath.IsStereo(Selected.Def.stereo)) { Say("Crop is off while 3D is on. Turn 3D off (Flat) to crop this screen.", 5f); return; }
             CancelDrag(); m_Placed.Clear();
             Mode = ToolMode.Crop; InteractMode = false;
             Say("Drag a rectangle on a screen to cut out a new panel", 5f);
@@ -178,7 +179,7 @@ namespace XrSpatial.Spatial
             if (!Selected) { Say("Select a screen first"); return; }
             var src = Selected.Source;
             if (src == null || !src.HasFrame) { Say("No picture yet to measure"); return; }
-            float aspect = Selected.Def.crop.width * src.Aspect / Mathf.Max(0.001f, Selected.Def.crop.height);
+            if (!Selected.PictureAspect(out float aspect)) { Say("No picture yet to measure"); return; }
             Selected.Def.corners = QuadMath.FitAspect(Selected.Def.corners, aspect);
             Workspace.Touch(Selected);
             Say("Fitted to the picture's shape", 2f);
@@ -188,10 +189,7 @@ namespace XrSpatial.Spatial
         static bool PanelAspect(PanelView p, out float aspect)
         {
             aspect = 0f;
-            var src = p ? p.Source : null;
-            if (src == null || !src.HasFrame) return false;
-            aspect = p.Def.crop.width * src.Aspect / Mathf.Max(0.001f, p.Def.crop.height);
-            return aspect > 0.05f;
+            return p && p.PictureAspect(out aspect);
         }
 
         /// <summary>Source pixels, panel size and angles for the selected panel, as one line (also used as the Labs readout).</summary>
@@ -202,7 +200,8 @@ namespace XrSpatial.Spatial
             var src = Selected.Source;
             if (src == null || !src.HasFrame) { text = "No picture yet to measure"; return false; }
             var c = Selected.Def.crop;
-            float pw = c.width * src.Width, ph = c.height * src.Height;
+            bool sbs = StereoMath.IsStereo(Selected.Def.stereo);
+            float pw = sbs ? src.Width * 0.5f : c.width * src.Width, ph = sbs ? src.Height : c.height * src.Height;   // SBS: one eye's picture
             float ppd = HeadsetPpd != null ? HeadsetPpd() : 20f;
             var q = Selected.Def.corners;
             float dist = HeadPosition != null ? Vector3.Distance(HeadPosition(), QuadMath.Centroid(q)) : PlaceDistance;
@@ -221,6 +220,42 @@ namespace XrSpatial.Spatial
             Workspace.Touch(Selected);
             Say($"Sharp size {snap.widthM:0.00}x{snap.heightM:0.00} m, {snap.sourcePpd:0} px/deg" + (snap.capped ? $" (capped at {PanelSizing.SnapCapDegrees:0} deg)" : snap.clamped ? " (limited)" : "") + ". Details in Labs.", 8f);
         }
+
+        // ------------------------------------------------------------------ 3D (side-by-side stereo), per selected screen
+
+        /// <summary>Flat, then SBS Half, then SBS Full, then Flat again. Depth Lab is bypassed on a 3D screen. The corners are never changed: use Fit picture for the right shape.</summary>
+        public void CycleStereo()
+        {
+            if (!Selected) { Say("Select a screen first (point at it and press the trigger in edit mode)."); return; }
+            var d = Selected.Def;
+            d.stereo = StereoMath.Next(d.stereo);
+            Workspace.Touch(Selected);
+            Say("3D: " + StereoMath.Name(d.stereo) + (StereoMath.IsStereo(d.stereo) ? ". Use Fit picture for the right shape." : ""), 4f);
+            StateChanged?.Invoke();
+        }
+
+        public void ToggleSwapEyes()
+        {
+            if (!Selected) { Say("Select a screen first"); return; }
+            var d = Selected.Def;
+            d.swapEyes = !d.swapEyes;
+            Workspace.Touch(Selected);
+            Say(d.swapEyes ? "Eyes swapped (right picture to the left eye)" : "Eyes normal (left picture to the left eye)" + (StereoMath.IsStereo(d.stereo) ? "" : ". Turn 3D on to see it."), 3f);
+            StateChanged?.Invoke();
+        }
+
+        /// <summary>One small step of 3D depth (convergence): positive brings the picture nearer, negative pushes it farther. Clamped to a comfortable range.</summary>
+        public void NudgeStereoOffset(int direction)
+        {
+            if (!Selected) { Say("Select a screen first"); return; }
+            var d = Selected.Def;
+            d.stereoOffset = StereoMath.StepOffset(d.stereoOffset, direction);
+            Workspace.Touch(Selected);
+            Say($"3D depth {StereoOffsetLabel(d.stereoOffset)}" + (Mathf.Abs(d.stereoOffset) >= StereoMath.MaxOffset - 1e-5f ? " (limit)" : ""), 2f);
+            StateChanged?.Invoke();
+        }
+
+        public static string StereoOffsetLabel(float offset) => Mathf.Abs(offset) < 1e-5f ? "0 (source)" : (offset > 0 ? "+" : "") + (offset * 100f).ToString("0.##") + "%";
 
         public void ToggleLockAspect() { LockAspect = !LockAspect; Say(LockAspect ? "Aspect locked: corner drags keep the picture's shape" : "Freeform: corners move freely", 3f); }
 
@@ -498,7 +533,8 @@ namespace XrSpatial.Spatial
             if (hover) hover.SetHighlight(PanelHighlight.Hover);
             if (m_Drag != Drag.Crop)
             {
-                if (s.triggerDown && hover) { m_Drag = Drag.Crop; m_DragPanel = hover; m_CropA = hover.UvToSource(uv); m_CropB = m_CropA; Pointer.Haptic(0.3f, 0.04f); }
+                if (s.triggerDown && hover && StereoMath.IsStereo(hover.Def.stereo)) Say("Crop is off on a 3D screen. Turn 3D off (Flat) first.", 4f);
+                else if (s.triggerDown && hover) { m_Drag = Drag.Crop; m_DragPanel = hover; m_CropA = hover.UvToSource(uv); m_CropB = m_CropA; Pointer.Haptic(0.3f, 0.04f); }
                 if (s.secondaryDown || s.menuDown) SetIdle();
                 return;
             }

@@ -142,6 +142,8 @@ namespace XrSpatial.App
             Palette.OnAddPattern = () => AddPattern();
             Palette.OnAddDepthTest = AddDepthTest;
             Palette.OnRemoveDepthTest = RemoveDepthTest;
+            Palette.OnAddStereoTest = AddStereoTest;
+            Palette.OnRemoveStereoTest = RemoveStereoTest;
             Palette.OnPickWindow = w => UseWindow(w);
             Palette.OnPickMonitor = i => AddMonitor(i);
             VirtualKeyboard = KeyboardPanel.Create(XrOrigin, Tool, Pointer);
@@ -303,6 +305,28 @@ namespace XrSpatial.App
             foreach (var id in ids) Workspace.RemoveSource(id);
             if (ids.Count > 0 && m_ActiveBeforeDepthTest != null && Workspace.Layout.FindSource(m_ActiveBeforeDepthTest) != null) Workspace.ActiveSourceId = m_ActiveBeforeDepthTest;
             Tool.Say(ids.Count > 0 ? "Depth test removed." : "No depth test screen to remove.", 3f);
+        }
+
+        // ------------------------------------------------------------------ 3D (SBS) test screen: generated half side-by-side picture, starts in Flat so both eye pictures are visible side by side
+
+        string m_ActiveBeforeStereoTest;
+
+        public void AddStereoTest()
+        {
+            if (Workspace.Layout.sources.Exists(s => s.kind == "sbstest")) { Tool.Say("The 3D test screen is already here (use Remove 3D test first).", 4f); return; }
+            m_ActiveBeforeStereoTest = Workspace.ActiveSourceId;
+            Workspace.AddSource(new SourceDef { kind = "sbstest", label = "3D test (half SBS)" });
+            var q = QuadMath.RectInFront(XrOrigin.InverseTransformPoint(Cam.transform.position), XrOrigin.InverseTransformDirection(Cam.transform.forward), Vector3.up, 1.8f, 2.0f, 16f / 9f);
+            Tool.Select(Workspace.AddSurface(Workspace.ActiveSourceId, q));
+            Tool.Say("3D test added in Flat: you should see two squeezed pictures. Press 3D: Flat once for SBS Half.", 8f);
+        }
+
+        public void RemoveStereoTest()
+        {
+            var ids = Workspace.Layout.sources.FindAll(s => s.kind == "sbstest").ConvertAll(s => s.id);
+            foreach (var id in ids) Workspace.RemoveSource(id);
+            if (ids.Count > 0 && m_ActiveBeforeStereoTest != null && Workspace.Layout.FindSource(m_ActiveBeforeStereoTest) != null) Workspace.ActiveSourceId = m_ActiveBeforeStereoTest;
+            Tool.Say(ids.Count > 0 ? "3D test removed." : "No 3D test screen to remove.", 3f);
         }
 
         // ------------------------------------------------------------------ command line

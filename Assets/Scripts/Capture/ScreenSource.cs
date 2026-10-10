@@ -25,7 +25,7 @@ namespace XrSpatial.Capture
         long m_ClosedAtFrame;
         public string Status => Backend != null ? Backend.Status : "not started";
         /// <summary>The depth map of this source (Depth Lab), or null when the backend has none. Never touched while depth is off.</summary>
-        bool IsSynthetic => Def.kind == "pattern" || Def.kind == "depthtest";                    // generated locally: never "closed", nothing to reconnect
+        bool IsSynthetic => Def.kind == "pattern" || Def.kind == "depthtest" || Def.kind == "sbstest";                    // generated locally: never "closed", nothing to reconnect
         public Texture2D DepthMap => (Backend as IDepthProvider)?.Depth ?? (IsSynthetic ? null : DepthProfiles.LiveTexture);
 
         readonly Func<CaptureRequest> m_Request;
@@ -44,6 +44,7 @@ namespace XrSpatial.Capture
             Backend = null;
             if (Def.kind == "pattern") Backend = new PatternBackend();
             else if (Def.kind == "depthtest") Backend = new DepthTestBackend();
+            else if (Def.kind == "sbstest") Backend = new StereoTestBackend();
             else if (RemoteHost.Active)
             {
                 // headset build: the PC host streams the window; find it by process/title among the PC's windows (retried by Tick while it is not open)
