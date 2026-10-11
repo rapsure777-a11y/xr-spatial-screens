@@ -40,3 +40,9 @@ Tools/ClickTest/obj/
 
 # the PC tools' project files are part of the source (the *.csproj rule above is for Unity's generated ones)
 !Tools/**/*.csproj
+Tools/XrssTransport/bin/
+Tools/XrssTransport/obj/
+Tools/XrssTransport.Tests/bin/
+Tools/XrssTransport.Tests/obj/
+Tools/PairingSpike/bin/
+Tools/PairingSpike/obj/

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Authenticated transport for the PC host: TLS 1.2 listener, pairing window, paired-device store, HMAC reconnect. Knows nothing about capture, input, audio, cursor or panels. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>12</LangVersion>
+    <RootNamespace>XrssTransport</RootNamespace>
+    <AssemblyName>XrssTransport</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+    <InternalsVisibleTo Include="XrssTransport.Tests" />
+  </ItemGroup>
+</Project>
