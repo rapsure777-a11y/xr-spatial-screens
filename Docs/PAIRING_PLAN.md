@@ -15,7 +15,7 @@ Rules (security review inputs):
 5. **Revocation:** removing a device deletes its secret on the host; the headset is refused from then on and must re-pair.
 6. **Dev path unchanged:** loopback + `adb reverse` stays plain TCP and selectable by address; the transport interface hides which mode is in use.
 
-Step 1 (spike) is DONE. Step 2 (Host Core) is in progress on this branch.
+Step 1 (spike) is DONE. Step 2 (Host Core) is implemented on this branch and awaits review: see `HOST_CORE_REPORT.md` (42 transport tests plus real-host end-to-end; headset side not started).
 
 ## Pairing ceremony (final)
 **Why the first draft was wrong.** A 6-digit code is only about 20 bits. If the code is a hash of inputs the attacker can still choose after seeing the other side's value (its own certificate, or a nonce), the attacker simply tries about a million candidates (a million P-256 keys or random nonces take seconds) until both victims see the same six digits. The user would then confirm a code that "matches" while a man in the middle sits in the channel. Truncating to 6 digits is only safe if every input is **committed to before the other side's value is known**. This is the standard short-authentication-string construction used by ZRTP and by Bluetooth numeric comparison (hash commitment, then reveal). It needs only SHA-256 and a secure RNG, both proven on the Frame, so no managed crypto library is added and no custom primitive is invented.

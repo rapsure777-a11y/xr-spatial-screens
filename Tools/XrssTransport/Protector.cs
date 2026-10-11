@@ -15,6 +15,7 @@ namespace XrssTransport
     /// Windows DPAPI, CurrentUser scope: only the same Windows user on the same machine can decrypt. A fixed application entropy string separates our blobs from other DPAPI users of the account.
     /// Anyone running code as that Windows user can still ask DPAPI to decrypt: that is the documented limit of this protection (the threat model excludes malware on the PC).
     /// </summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     public sealed class DpapiProtector : IProtector
     {
         static readonly byte[] Entropy = Encoding.ASCII.GetBytes("XrSpatialScreens.Transport.v1");

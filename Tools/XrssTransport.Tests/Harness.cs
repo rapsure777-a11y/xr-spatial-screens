@@ -95,10 +95,10 @@ namespace XrssTransport.Tests
         public byte[] HostId, Nc, Nh;
         static readonly TimeSpan T = TimeSpan.FromSeconds(8);
 
-        public static async Task<TestClient> Connect(int port, byte[] pinnedFingerprint = null)
+        public static async Task<TestClient> Connect(int port, byte[] pinnedFingerprint = null, IPAddress address = null)
         {
             var c = new TestClient { Tcp = new TcpClient() };
-            await c.Tcp.ConnectAsync(IPAddress.Loopback, port);
+            await c.Tcp.ConnectAsync(address ?? IPAddress.Loopback, port);
             c.Ssl = new SslStream(c.Tcp.GetStream(), false, (s, cert, ch, e) => { c.SeenFingerprint = AuthCrypto.Fingerprint(cert.GetRawCertData()); return pinnedFingerprint == null || c.SeenFingerprint.SequenceEqual(pinnedFingerprint); });
             await c.Ssl.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = "xrss-pc", EnabledSslProtocols = SslProtocols.Tls12 });
             return c;
@@ -124,7 +124,7 @@ namespace XrssTransport.Tests
         }
 
         /// <summary>First half of pairing: commit, receive the host nonce, reveal, compute the code. Returns the code this side computes.</summary>
-        public async Task<string> BeginPair(byte[] deviceId, HostFixture host, byte[] fingerprintOverride = null)
+        public async Task<string> BeginPair(byte[] deviceId, HostFixture host = null, byte[] fingerprintOverride = null)
         {
             await Hello(ModePair, deviceId);
             Nc = AuthCrypto.Random(32);

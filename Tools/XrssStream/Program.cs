@@ -1,4 +1,5 @@
 using SkiaSharp;
+using XrssTransport;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -12,7 +13,8 @@ using System.Threading;
 
 // XrssStream, the PC host for the headset client. Serves many captured windows over one TCP connection (loopback; the headset reaches it through `adb reverse`).
 //
-//   XrssStream [--port 5600] [--fps 60] [--maxw 2880] [--quality 90] [--capture path\to\XrssCapture.exe]
+//   XrssStream [--port 5600] [--fps 60] [--maxw 2880] [--quality 90] [--capture path\to\XrssCapture.exe] [--transport dev|lan|both] [--lan-port 5610]
+//   --transport dev (default) is the plain loopback listener used through `adb reverse`; lan = the paired TLS listener only; both = both. See Docs/HOST_CORE_REPORT.md.
 //
 // Wire format (little endian). Every message starts with a 4-byte magic (server -> client) or a 1-byte type (client -> server).
 //   server -> client
@@ -44,21 +46,33 @@ static unsafe class Program
     static int Main(string[] argv)
     {
         string Arg(string k, string d) { int i = Array.IndexOf(argv, "--" + k); return i >= 0 && i + 1 < argv.Length ? argv[i + 1] : d; }
+        if (TransportHost.RunOfflineCommand(argv)) return 0;
         int port = int.Parse(Arg("port", "5600"));
         Fps = int.Parse(Arg("fps", "60")); MaxW = int.Parse(Arg("maxw", "2880")); Quality = int.Parse(Arg("quality", "90"));
         CapturePath = Path.GetFullPath(Arg("capture", Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "XrssCapture", "publish", "XrssCapture.exe")));
         if (!File.Exists(CapturePath)) { Console.WriteLine("capture helper not found: " + CapturePath); return 2; }
 
+        // transport: dev = plain TCP on loopback through adb reverse (default, unchanged); lan = paired TLS listener only; both = both
+        string transport = Arg("transport", "dev").ToLowerInvariant();
+        if (transport != "dev" && transport != "lan" && transport != "both") { Console.WriteLine("unknown --transport " + transport + " (dev, lan or both)"); return 2; }
+        TransportHost lan = null;
+        if (transport != "dev") { lan = new TransportHost(int.Parse(Arg("lan-port", "5610"))); lan.Start(); }
+
+        if (transport == "lan") { lan.RunAdminConsole(); return 0; }
+
         var listener = new TcpListener(IPAddress.Loopback, port);
         listener.Start();
         Console.WriteLine($"listening on 127.0.0.1:{port} (jpeg q{Quality} 4:4:4, max width {MaxW}, {Fps} fps cap, helper {CapturePath})");
+        if (lan != null) lan.StartAdminConsoleThread();
         while (true)
         {
             using var client = listener.AcceptTcpClient();
             client.NoDelay = true;
             Console.WriteLine("client connected");
+            if (!HostSessions.Enter(client, false)) { Console.WriteLine("client refused: a paired LAN session is active"); continue; }
             try { new Session(client).Run(); }
             catch (Exception e) { Console.WriteLine("client ended: " + e.Message); }
+            finally { HostSessions.Leave(); }
             Console.WriteLine("client gone");
         }
     }
@@ -210,7 +224,7 @@ sealed unsafe class Session
 {
     const int Workers = 4;
     readonly TcpClient m_Client;
-    readonly NetworkStream m_Net;
+    readonly Stream m_Net;
     readonly object m_WriteLock = new object();
     readonly Dictionary<ushort, StreamState> m_Streams = new Dictionary<ushort, StreamState>();
     readonly object m_StreamsLock = new object();
@@ -219,7 +233,8 @@ sealed unsafe class Session
     int m_InFlight;
     readonly int m_Port;
 
-    public Session(TcpClient client) { m_Client = client; m_Net = client.GetStream(); m_Port = ((IPEndPoint)client.Client.LocalEndPoint).Port; }
+    /// <summary>The stream is the plain TCP stream (dev/loopback) or the authenticated TLS stream (paired LAN); the protocol on it is identical and this class knows no difference.</summary>
+    public Session(TcpClient client, Stream stream = null) { m_Client = client; m_Net = stream ?? client.GetStream(); m_Port = ((IPEndPoint)client.Client.LocalEndPoint).Port; }
 
     void Send(byte[] a, byte[] b = null)
     {

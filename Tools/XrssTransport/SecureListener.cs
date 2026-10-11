@@ -48,6 +48,8 @@ namespace XrssTransport
         readonly CancellationTokenSource m_Stop = new CancellationTokenSource();
         readonly ConcurrentDictionary<string, DateTime> m_Issued = new ConcurrentDictionary<string, DateTime>();
         readonly List<AuthenticatedConnection> m_Live = new List<AuthenticatedConnection>();
+        const int MaxPending = 32;                       // simultaneous connections that have not finished authentication
+        int m_Pending;
         Timer m_Timer;
         IReadOnlyList<IPAddress> m_Addresses; int m_ManagedPort;
 
@@ -128,9 +130,12 @@ namespace XrssTransport
         {
             string ip = "?";
             AuthenticatedConnection live = null;
+            bool counted = false;
             try
             {
                 ip = ((IPEndPoint)tcp.Client.RemoteEndPoint).Address.ToString();
+                if (Interlocked.Increment(ref m_Pending) > MaxPending) { Interlocked.Decrement(ref m_Pending); m_Log.Info("connection refused (too many unauthenticated connections) from " + ip); return; }
+                counted = true;
                 if (!m_Limits.AllowConnection(ip)) { m_Log.Info("connection refused (rate limit) from " + ip); return; }
                 tcp.NoDelay = true;
                 SslStream ssl = new SslStream(tcp.GetStream(), false);
@@ -160,6 +165,7 @@ namespace XrssTransport
                 else if (mode == ModePair) live = await Pair(ssl, tcp, ip, deviceId, deviceHex).ConfigureAwait(false);
                 else { m_Log.Info("refused: unknown mode " + mode + " from " + ip); await Reject(ssl, RejectCode.ProtocolError).ConfigureAwait(false); }
 
+                if (counted) { Interlocked.Decrement(ref m_Pending); counted = false; }
                 if (live != null)
                 {
                     lock (m_Live) m_Live.Add(live);
@@ -170,6 +176,7 @@ namespace XrssTransport
             catch (Exception e) { m_Log.Info("connection from " + ip + " ended: " + e.GetType().Name); }
             finally
             {
+                if (counted) Interlocked.Decrement(ref m_Pending);
                 if (live != null) lock (m_Live) m_Live.Remove(live);
                 try { tcp.Dispose(); } catch { }
             }
