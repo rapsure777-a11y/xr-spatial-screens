@@ -6,7 +6,7 @@ Working title: **XR Spatial Screens** (Gamebreak Labs, version 0.1.0). Draft cop
 1. **Pairing / one-click host app.** Today the link is adb over the dongle address and needs Lepton Development on the Frame. A Steam customer cannot be asked to do that. Pairing + LAN transport (design exists only on `claude/hardware-video`) and a tray host app are required. `main` waits for this.
 2. **Installer and distribution of the Android app.** How the APK reaches the Frame (Steam depot, sideload helper, or store) is undecided.
 3. **Steam Frame availability and Steamworks rules** for a headset-native companion app: confirm with Steamworks docs before committing to the category (Software vs Game) and the VR tags.
-4. Unverified features not to advertise yet: Full SBS with a real file, Clear unused on headset, Depth Lab re-check, Bluetooth keyboard.
+4. Unverified features not to advertise yet: Full SBS with a real file, Clear unused on headset, Depth Lab re-check.
 
 ## Short description (under 300 characters)
 Put your PC's windows in your room. XR Spatial Screens streams any window or monitor to your Steam Frame as a resizable, tiltable screen over passthrough, with controller clicking, typing and PC sound.
@@ -20,7 +20,7 @@ XR Spatial Screens turns the windows on your PC into floating screens in your re
 - **Passthrough.** See your real room behind your screens.
 - **Place it your way.** Draw, grab, move, turn, tilt and resize. Lock the aspect ratio, or snap a screen to the sharpest size for its distance.
 - **Crop.** Split one window into independent panels.
-- **Click, drag, scroll and type** into PC windows with the controller laser, the virtual keyboard, or a keyboard.
+- **Click, drag, scroll and type** into PC windows with the controller laser, the virtual keyboard, or a Bluetooth keyboard.
 - **PC sound in your headset**, with a volume control up to 300%.
 - **See your mouse.** An optional PC cursor overlay shows where Windows really has the pointer.
 - **Layouts remember each app.** Your screens come back where you left them.
