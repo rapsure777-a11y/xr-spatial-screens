@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
+using XrssTransport.Client;
 using Debug = UnityEngine.Debug;
 
 namespace XrSpatial.Capture
@@ -25,13 +26,12 @@ namespace XrSpatial.Capture
 
     /// <summary>
     /// Connection from the headset app to the PC host (Tools/XrssStream). One TCP connection carries the PC's window list, any number of window streams (JPEG frames),
-    /// and the pointer events going back. Wire format: see Tools/XrssStream/Program.cs. The host address is 127.0.0.1:5600, reached through `adb reverse`.
+    /// and the pointer events going back. Wire format: see Tools/XrssStream/Program.cs. Where the bytes come from is the business of <see cref="PcLink"/> alone: in Dev mode a plain TCP connection to
+    /// 127.0.0.1:5600 (through `adb reverse`), in Paired PC mode an authenticated TLS stream. This class never sees certificates, secrets or pairing codes.
     /// Streams the app wants are remembered, so they are reopened after the connection comes back. Active only after <see cref="Enable"/> (the headset build does that).
     /// </summary>
     public static class RemoteHost
     {
-        public const string Address = "127.0.0.1";
-        public const int Port = 5600;
         const uint FrameMagic = 0x32535258, ListMagic = 0x4C535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258, LayoutMagic = 0x59535258, DepthMagic = 0x44535258, CursorMagic = 0x43535258;       // 'XRS2', 'XRSL', 'XRSS', 'XRSA', 'XRSY', 'XRSD', 'XRSC'
 
         sealed class Stream
@@ -41,6 +41,9 @@ namespace XrSpatial.Capture
             public CursorSample cursor;
             public byte[] depth; public int dw, dh, depthSeq;                        // Depth Lab: the newest depth picture the PC sent (255 = near)
         }
+
+        /// <summary>The connection supervisor (dev adb link or paired LAN). Valid after <see cref="Enable"/>.</summary>
+        public static PcLink Link { get; private set; }
 
         public static bool Active { get; private set; }
         public static bool Connected { get; private set; }
@@ -53,7 +56,7 @@ namespace XrSpatial.Capture
         static readonly object s_Lock = new object(), s_WriteLock = new object();
         static readonly Dictionary<ushort, Stream> s_Streams = new Dictionary<ushort, Stream>();
         static ushort s_NextId = 1;
-        static NetworkStream s_Net;
+        static System.IO.Stream s_Net;
         static CapturableWindow[] s_Windows = new CapturableWindow[0];
         static readonly List<TaskCompletionSource<List<CapturableWindow>>> s_ListWaiters = new List<TaskCompletionSource<List<CapturableWindow>>>();
         static int s_SentInputs;
@@ -62,6 +65,7 @@ namespace XrSpatial.Capture
         {
             if (Active) return;
             Active = true; s_Quit = false; State = "connecting";
+            Link = PcLinkHost.Init();                                          // main thread: the platform paths are read here
             s_CursorMode = (Core.PcCursorMode)Mathf.Clamp(PlayerPrefs.GetInt("xrss.pccursor", 0), 0, 2);
             s_Thread = new Thread(Run) { IsBackground = true, Name = "RemoteHost" }; s_Thread.Start();
             s_Timer = new Thread(() => { while (!s_Quit) { Thread.Sleep(4000); if (Connected) RequestList(); } }) { IsBackground = true, Name = "RemoteHostList" }; s_Timer.Start();
@@ -77,11 +81,12 @@ namespace XrSpatial.Capture
             var audioBuf = new byte[4096];
             while (!s_Quit)
             {
+                bool wasConnected = false, threw = false;
                 try
                 {
-                    using var c = new TcpClient { NoDelay = true };
-                    c.Connect(Address, Port);
-                    var net = c.GetStream(); s_Net = net; Connected = true; State = "connected"; ConnectionEpoch++;
+                    if (!Link.TryConnect(out var net, out var owner)) { State = Link.Snapshot.Text; Thread.Sleep(Mathf.Max(0, Link.RetryDelayMs)); continue; }
+                    using var c = owner;
+                    s_Net = net; Connected = true; wasConnected = true; State = "connected"; ConnectionEpoch++;
                     Debug.Log("[XrSpatial] remote: connected to the PC host");
                     RequestList();
                     SendSound();
@@ -157,14 +162,15 @@ namespace XrSpatial.Capture
                         else throw new Exception("bad message magic");
                     }
                 }
-                catch (Exception e) { if (!s_Quit) { State = "waiting for the PC host (" + e.GetType().Name + ")"; } }
+                catch (Exception e) { threw = true; if (!s_Quit) { State = "waiting for the PC host (" + e.GetType().Name + ")"; } }
                 Connected = false; s_Net = null;
+                if (wasConnected && !s_Quit) Link.NotifyDisconnected();                       // paired: retry at once, then back off (see PcLink)
                 lock (s_Lock) foreach (var s in s_Streams.Values) { if (s.state == StreamState.Live) s.state = StreamState.Opening; s.cursor = default; }       // a cursor from before the drop must not stay drawn
-                if (!s_Quit) Thread.Sleep(1000);
+                if (!s_Quit) Thread.Sleep(threw && !wasConnected ? Mathf.Max(1000, Link.RetryDelayMs) : Mathf.Max(0, Link.RetryDelayMs));
             }
         }
 
-        static void Read(NetworkStream s, byte[] buf, int n)
+        static void Read(System.IO.Stream s, byte[] buf, int n)
         {
             int got = 0;
             while (got < n) { int r = s.Read(buf, got, n - got); if (r <= 0) throw new System.IO.EndOfStreamException(); got += r; }

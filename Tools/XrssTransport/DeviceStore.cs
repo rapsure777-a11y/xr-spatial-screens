@@ -44,6 +44,10 @@ namespace XrssTransport
 
         public int Count { get { lock (m_Lock) return m_Devices.Count; } }
 
+        /// <summary>When a device was last removed (persisted). The listener stays reachable for a while after that so a removed headset can be told, instead of seeing the PC vanish.</summary>
+        public DateTime? LastRemovedUtc { get { lock (m_Lock) return m_LastRemoved; } }
+        DateTime? m_LastRemoved;
+
         public IReadOnlyList<PairedDevice> List() { lock (m_Lock) return m_Devices.Select(d => new PairedDevice { DeviceId = d.DeviceId, Label = d.Label, HostId = d.HostId, PairedUtc = d.PairedUtc, LastConnectedUtc = d.LastConnectedUtc, SecretProtected = null }).ToList(); }
 
         public bool Contains(string deviceIdHex, string hostIdHex) { lock (m_Lock) return Find(deviceIdHex, hostIdHex) != null; }
@@ -79,7 +83,7 @@ namespace XrssTransport
         public bool Remove(string deviceIdHex)
         {
             bool removed;
-            lock (m_Lock) { removed = m_Devices.RemoveAll(d => string.Equals(d.DeviceId, deviceIdHex, StringComparison.OrdinalIgnoreCase)) > 0; if (removed) Save(); }
+            lock (m_Lock) { removed = m_Devices.RemoveAll(d => string.Equals(d.DeviceId, deviceIdHex, StringComparison.OrdinalIgnoreCase)) > 0; if (removed) { m_LastRemoved = m_Now(); Save(); } }
             if (removed) { Removed?.Invoke(deviceIdHex.ToUpperInvariant()); Changed?.Invoke(); }
             return removed;
         }
@@ -87,7 +91,7 @@ namespace XrssTransport
         public int RemoveAll()
         {
             List<string> ids;
-            lock (m_Lock) { ids = m_Devices.Select(d => d.DeviceId).ToList(); m_Devices.Clear(); Save(); }
+            lock (m_Lock) { ids = m_Devices.Select(d => d.DeviceId).ToList(); m_Devices.Clear(); if (ids.Count > 0) m_LastRemoved = m_Now(); Save(); }
             foreach (var id in ids) Removed?.Invoke(id);
             if (ids.Count > 0) Changed?.Invoke();
             return ids.Count;
@@ -102,7 +106,7 @@ namespace XrssTransport
             try
             {
                 var file = JsonSerializer.Deserialize<FileFormat>(File.ReadAllText(m_Path));
-                if (file != null && file.Version == FormatVersion && file.Devices != null) m_Devices.AddRange(file.Devices);
+                if (file != null && file.Version == FormatVersion && file.Devices != null) { m_Devices.AddRange(file.Devices); m_LastRemoved = file.LastRemovedUtc; }
             }
             catch (Exception) { /* unreadable store: start empty; every device must pair again (fail closed) */ }
         }
@@ -110,10 +114,10 @@ namespace XrssTransport
         void Save()
         {
             string tmp = m_Path + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(new FileFormat { Version = FormatVersion, Devices = m_Devices }, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(tmp, JsonSerializer.Serialize(new FileFormat { Version = FormatVersion, Devices = m_Devices, LastRemovedUtc = m_LastRemoved }, new JsonSerializerOptions { WriteIndented = true }));
             File.Move(tmp, m_Path, true);
         }
 
-        sealed class FileFormat { public int Version { get; set; } public List<PairedDevice> Devices { get; set; } }
+        sealed class FileFormat { public int Version { get; set; } public List<PairedDevice> Devices { get; set; } public DateTime? LastRemovedUtc { get; set; } }
     }
 }

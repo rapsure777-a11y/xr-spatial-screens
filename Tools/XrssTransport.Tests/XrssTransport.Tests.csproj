@@ -12,6 +12,10 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
   <ItemGroup>
+    <!-- the headset's client transport (pure C#, same files the Unity assembly compiles) is tested here against the real host listener -->
+    <Compile Include="..\..\Assets\Scripts\Transport\Client\*.cs" LinkBase="Client" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\XrssTransport\XrssTransport.csproj" />
   </ItemGroup>
 </Project>

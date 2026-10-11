@@ -567,7 +567,8 @@ namespace XrssTransport.Tests
                         window.Open(); await Task.Delay(100); Assert.True(l.IsListening);
                         window.Close(); await Task.Delay(100); Assert.False(l.IsListening);
                         store.Enroll(AuthCrypto.Hex(AuthCrypto.Random(16)), "x", id.HostIdHex, AuthCrypto.Random(32)); await Task.Delay(100); Assert.True(l.IsListening);
-                        store.RemoveAll(); await Task.Delay(100); Assert.False(l.IsListening);
+                        store.RemoveAll(); await Task.Delay(100); Assert.True(l.IsListening);                    // removed: stays reachable for a grace period so the removed headset can be told
+                        clock.Advance(SecureListener.RevocationGrace + TimeSpan.FromSeconds(1)); l.RefreshForTest(); Assert.False(l.IsListening);   // then closes: nothing paired, no recent removal
                     }
                 }
             }

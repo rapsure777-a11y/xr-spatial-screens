@@ -24,9 +24,9 @@ namespace XrssTransport.Tests
             public readonly ConcurrentQueue<string> Out = new ConcurrentQueue<string>();
             public string Dir = Path.Combine(Path.GetTempPath(), "xrss-e2e-" + Guid.NewGuid().ToString("N"));
 
-            public Host(int port, string transport)
+            public Host(int port, string transport, int devPort)
             {
-                var psi = new ProcessStartInfo(HostExe, "--transport " + transport + " --lan-port " + port + " --port " + (port + 1)) { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
+                var psi = new ProcessStartInfo(HostExe, "--transport " + transport + " --lan-port " + port + " --port " + devPort) { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
                 psi.Environment["XRSS_HOST_DIR"] = Dir; psi.Environment["XRSS_SHOW_CODE"] = "1";
                 P = Process.Start(psi);
                 P.OutputDataReceived += (s, e) => { if (e.Data != null) Out.Enqueue(e.Data); }; P.BeginOutputReadLine();
@@ -60,7 +60,7 @@ namespace XrssTransport.Tests
             var lanAddress = LanInterfaces.PrivateIPv4().FirstOrDefault();
             if (!File.Exists(HostExe) || lanAddress == null) return;
             int port = FreePort();
-            using (var host = new Host(port, "lan"))
+            using (var host = new Host(port, "lan", FreePort()))
             {
                 await host.WaitFor("paired LAN transport ready");
                 string fpLine = await host.WaitFor("certificate fingerprint");
@@ -95,7 +95,7 @@ namespace XrssTransport.Tests
                 }
                 c.Dispose();
                 await Task.Delay(300);
-                await Assert.ThrowsAnyAsync<Exception>(async () => { using (var c3 = await TestClient.Connect(port, fp, lanAddress)) { await c3.Authenticate(id, secret); } });   // port closed again, old secret useless
+                using (var c3 = await TestClient.Connect(port, fp, lanAddress)) Assert.Equal(MsgType.Reject, (await c3.Authenticate(id, secret)).answer);   // still reachable for the grace period, and the old secret is refused: the headset can be told
                 Assert.DoesNotContain(AuthCrypto.Hex(secret), string.Join("\n", host.Out), StringComparison.OrdinalIgnoreCase);
             }
         }
@@ -104,13 +104,13 @@ namespace XrssTransport.Tests
         public async Task RealHost_DevTransport_StillServesPlainLoopback()
         {
             if (!File.Exists(HostExe)) return;
-            int port = FreePort();
-            using (var host = new Host(port, "dev"))                                         // --transport dev is also the default
+            int port = FreePort(), devPort = FreePort();
+            using (var host = new Host(port, "dev", devPort))                                         // --transport dev is also the default
             {
-                await host.WaitFor("listening on 127.0.0.1:" + (port + 1));
+                await host.WaitFor("listening on 127.0.0.1:" + devPort);
                 using (var tcp = new TcpClient())
                 {
-                    await tcp.ConnectAsync(IPAddress.Loopback, port + 1);
+                    await tcp.ConnectAsync(IPAddress.Loopback, devPort);
                     var s = tcp.GetStream(); await s.WriteAsync(new[] { (byte)'W' }, 0, 1);       // no TLS, no pairing: straight to the application protocol
                     Assert.Equal("XRSL", await ReadMagic(s));
                 }

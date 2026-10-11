@@ -1,7 +1,7 @@
 {
     "name": "XrSpatial.Capture",
     "rootNamespace": "XrSpatial.Capture",
-    "references": [ "XrSpatial.Core" ],
+    "references": [ "XrSpatial.Core", "XrSpatial.Transport" ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": true,

@@ -9,6 +9,10 @@
     <AssemblyName>XrssTransport</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <!-- shared source with the headset app (Unity assembly XrSpatial.Transport): one implementation of every formula and the mDNS wire format -->
+    <Compile Include="..\..\Assets\Scripts\Transport\Shared\*.cs" LinkBase="Shared" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
     <InternalsVisibleTo Include="XrssTransport.Tests" />
   </ItemGroup>

@@ -48,14 +48,19 @@ namespace XrssTransport
         readonly CancellationTokenSource m_Stop = new CancellationTokenSource();
         readonly ConcurrentDictionary<string, DateTime> m_Issued = new ConcurrentDictionary<string, DateTime>();
         readonly List<AuthenticatedConnection> m_Live = new List<AuthenticatedConnection>();
+        /// <summary>After a device is removed the listener stays up this long (and keeps advertising) so the removed headset gets a clear "unknown device" answer instead of seeing the PC vanish.</summary>
+        public static readonly TimeSpan RevocationGrace = TimeSpan.FromMinutes(15);
         const int MaxPending = 32;                       // simultaneous connections that have not finished authentication
         int m_Pending;
+        bool m_Announced;
         Timer m_Timer;
         IReadOnlyList<IPAddress> m_Addresses; int m_ManagedPort;
 
         /// <summary>Called on a worker thread for each authenticated connection; the connection ends when this returns.</summary>
         public Func<AuthenticatedConnection, Task> OnAuthenticated { get; set; }
         public int Port { get; private set; }
+        /// <summary>Raised (true/false) when the listener binds or unbinds in managed mode; the host starts and stops mDNS advertising from it.</summary>
+        public event Action<bool> ListeningChanged;
 
         public SecureListener(HostIdentity identity, DeviceStore store, PairingWindow window, ITransportLog log = null, RateLimiter limits = null, RateLimiter pairLimits = null, Func<DateTime> now = null)
         {
@@ -90,10 +95,13 @@ namespace XrssTransport
             Refresh();
         }
 
+        internal void RefreshForTest() => Refresh();
+
         void Refresh()
         {
             if (m_Stop.IsCancellationRequested || m_Addresses == null) return;
-            bool want = m_Store.Count > 0 || m_Window.IsOpen;
+            var removedAt = m_Store.LastRemovedUtc;
+            bool want = m_Store.Count > 0 || m_Window.IsOpen || (removedAt.HasValue && m_Now() - removedAt.Value < RevocationGrace);
             lock (m_Lock)
             {
                 if (want && m_Listeners.Count == 0)
@@ -102,11 +110,13 @@ namespace XrssTransport
                         try { var l = new TcpListener(a, m_ManagedPort); l.Start(); m_Listeners.Add(l); Port = ((IPEndPoint)l.LocalEndpoint).Port; m_Log.Info("lan listener bound to " + a + ":" + Port); _ = AcceptLoop(l); }
                         catch (Exception e) { m_Log.Info("lan listener could not bind " + a + ": " + e.Message); }
                 }
+                if (want && m_Listeners.Count > 0 && !m_Announced) { m_Announced = true; ThreadPool.QueueUserWorkItem(_ => ListeningChanged?.Invoke(true)); }
                 else if (!want && m_Listeners.Count > 0)
                 {
                     foreach (var l in m_Listeners) l.Stop();
                     m_Listeners.Clear(); Port = 0;
-                    m_Log.Info("lan listener closed (nothing paired, pairing closed)");
+                    m_Log.Info("lan listener closed (nothing paired, pairing closed, no recent removal)");
+                    if (m_Announced) { m_Announced = false; ThreadPool.QueueUserWorkItem(_ => ListeningChanged?.Invoke(false)); }
                 }
             }
         }
@@ -186,7 +196,13 @@ namespace XrssTransport
 
         static async Task Reject(Stream s, RejectCode code)
         {
-            try { using (var cts = Step()) await WriteAsync(s, MsgType.Reject, RejectPayload(code), cts.Token).ConfigureAwait(false); } catch (Exception) { }
+            try
+            {
+                using (var cts = Step()) await WriteAsync(s, MsgType.Reject, RejectPayload(code), cts.Token).ConfigureAwait(false);
+                // Let the client read the refusal before the socket closes: closing with unread client bytes pending makes the OS reset the connection and the refusal is lost.
+                using (var cts = new CancellationTokenSource(1000)) { var sink = new byte[256]; while (await s.ReadAsync(sink, 0, sink.Length, cts.Token).ConfigureAwait(false) > 0) { } }
+            }
+            catch (Exception) { }
         }
 
         // ------------------------------------------------------------------ reconnect authentication

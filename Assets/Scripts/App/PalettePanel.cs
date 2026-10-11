@@ -5,6 +5,7 @@ using UnityEngine.UI;
 using XrSpatial.Capture;
 using XrSpatial.Core;
 using XrSpatial.Spatial;
+using XrssTransport.Client;
 
 namespace XrSpatial.App
 {
@@ -34,6 +35,11 @@ namespace XrSpatial.App
         readonly List<Btn> m_Main = new List<Btn>();
         readonly List<Btn> m_Windows = new List<Btn>();
         readonly List<Btn> m_Labs = new List<Btn>();
+        readonly List<Btn> m_Conn = new List<Btn>();                              // PC connection page (pairing); content comes from ConnectionPage
+        readonly List<GameObject> m_ConnDecor = new List<GameObject>();
+        ConnectionPageState m_ConnUi = new ConnectionPageState();
+        string m_ConnSig = "";
+        bool m_ConnPrompted;
         readonly List<GameObject> m_LabsDecor = new List<GameObject>();
         readonly List<(Text text, Func<string> label)> m_LabsLive = new List<(Text, Func<string>)>();
         Btn m_Drag;                                                                 // the slider being dragged (trigger held)
@@ -41,10 +47,10 @@ namespace XrSpatial.App
         public Action OnAddDepthTest, OnRemoveDepthTest, OnAddStereoTest, OnRemoveStereoTest;
         readonly List<GameObject> m_MainDecor = new List<GameObject>();            // section headers and hairlines: shown with the main page only
         readonly List<(Text text, Func<string> label)> m_Headers = new List<(Text, Func<string>)>();
-        List<Btn> Current => m_Page == Page.Main ? m_Main : m_Page == Page.Windows ? m_Windows : m_Labs;
+        List<Btn> Current => m_Page == Page.Main ? m_Main : m_Page == Page.Windows ? m_Windows : m_Page == Page.Connection ? m_Conn : m_Labs;
         Btn m_Hover;
         Font m_Font;
-        enum Page { Main, Windows, Labs }
+        enum Page { Main, Windows, Labs, Connection }
         Page m_Page = Page.Main;
         List<CapturableWindow> m_WindowList = new List<CapturableWindow>();
         int m_WindowPage;
@@ -174,6 +180,7 @@ namespace XrSpatial.App
                 Add(() => RemoteHost.SoundEnabled ? "PC sound: ON" : "PC sound: off", () => RemoteHost.SetSound(!RemoteHost.SoundEnabled), () => RemoteHost.SoundEnabled);
                 Add(() => "Volume -", () => RemoteAudio.StepGain(-1));
                 Add(() => "Volume +", () => RemoteAudio.StepGain(1));
+                Add(() => "PC: " + ConnectionPage.ShortState(RemoteHost.Link.Snapshot), ShowConnection, () => RemoteHost.Link.Snapshot.State == LinkState.Connected || RemoteHost.Link.Snapshot.Mode == LinkMode.Dev);       // the free slot of this section: no extra palette height
             }
 
             Section("UTILITY"); Row(3);
@@ -213,12 +220,81 @@ namespace XrSpatial.App
             m_Page = Page.Main; m_Drag = null;
             foreach (var b in m_Windows) Destroy(b.rect.gameObject);
             m_Windows.Clear();
+            foreach (var b in m_Conn) Destroy(b.rect.gameObject);
+            m_Conn.Clear();
+            foreach (var g in m_ConnDecor) Destroy(g);
+            m_ConnDecor.Clear();
             foreach (var b in m_Labs) Destroy(b.rect.gameObject);
             m_Labs.Clear();
             foreach (var g in m_LabsDecor) Destroy(g);
             m_LabsDecor.Clear(); m_LabsLive.Clear();
             foreach (var b in m_Main) b.rect.gameObject.SetActive(true);
             foreach (var g in m_MainDecor) g.SetActive(true);
+        }
+
+        // ------------------------------------------------------------------ PC connection page (pairing). The content and the actions come from ConnectionPage; this only draws them.
+
+        void ShowConnection()
+        {
+            m_Page = Page.Connection; m_ConnUi = new ConnectionPageState();
+            foreach (var b in m_Main) b.rect.gameObject.SetActive(false);
+            foreach (var g in m_MainDecor) g.SetActive(false);
+            var snap = RemoteHost.Link.Snapshot;
+            if (snap.Mode == LinkMode.PairedLan && !snap.Paired) RemoteHost.Link.StartSearch();         // looking for PCs is the first thing to do
+            BuildConnection();
+        }
+
+        string ConnSig() => RemoteHost.Link.Snapshot.Version + ":" + m_ConnUi.Version;
+
+        void BuildConnection()
+        {
+            var link = RemoteHost.Link;
+            var view = ConnectionPage.Build(link, m_ConnUi, ShowMain);
+            m_ConnSig = ConnSig();
+            foreach (var b in m_Conn) Destroy(b.rect.gameObject);
+            m_Conn.Clear();
+            foreach (var g in m_ConnDecor) Destroy(g);
+            m_ConnDecor.Clear();
+            float full = W - 2 * Style.Margin, y = H - 12 - 28 - 66 - 4, bh = 70f, gap = 8f;
+            var title = Txt("ConnTitle", m_Rect, new Vector2(Style.Margin + 2, y - 36), new Vector2(full, 36), 28, TextAnchor.MiddleLeft, Style.Accent);
+            title.fontStyle = FontStyle.Bold; title.text = view.Title; m_ConnDecor.Add(title.gameObject); y -= 42;
+            if (view.Code != null)
+            {
+                var big = Txt("ConnCode", m_Rect, new Vector2(Style.Margin, y - 130), new Vector2(full, 130), 112, TextAnchor.MiddleCenter, Style.Text);
+                big.fontStyle = FontStyle.Bold; big.text = view.Code; m_ConnDecor.Add(big.gameObject); y -= 138;
+            }
+            var body = Txt("ConnBody", m_Rect, new Vector2(Style.Margin + 2, y - 130), new Vector2(full - 4, 130), 22, TextAnchor.UpperLeft, Style.Text);
+            body.text = view.Body; m_ConnDecor.Add(body.gameObject); y -= 136;
+            if (view.Keypad)
+            {
+                var typed = Txt("ConnTyped", m_Rect, new Vector2(Style.Margin, y - 56), new Vector2(full, 56), 38, TextAnchor.MiddleLeft, Style.Accent);
+                typed.text = view.Typed + "_"; m_ConnDecor.Add(typed.gameObject); y -= 62;
+                string[] keys = { "1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", ":" };
+                float kw = (full - 2 * Style.ColGap) / 3f;
+                for (int i = 0; i < keys.Length; i++)
+                {
+                    string k = keys[i];
+                    m_Conn.Add(MakeBtn(new Vector2(Style.Margin + (i % 3) * (kw + Style.ColGap), y - (i / 3 + 1) * (bh + gap) + gap), new Vector2(kw, bh), () => k, () => { ConnectionPage.Key(m_ConnUi, k); }, null));
+                }
+                y -= 4 * (bh + gap);
+                float hw = (full - 2 * Style.ColGap) / 3f;
+                m_Conn.Add(MakeBtn(new Vector2(Style.Margin, y - bh), new Vector2(hw, bh), () => "Delete", () => ConnectionPage.Key(m_ConnUi, "<"), null));
+                m_Conn.Add(MakeBtn(new Vector2(Style.Margin + hw + Style.ColGap, y - bh), new Vector2(hw, bh), () => m_ConnUi.PairMode || !link.Snapshot.Paired ? "Pair here" : "Use address", () =>
+                {
+                    string a = m_ConnUi.Typed; m_ConnUi.Typing = false; m_ConnUi.Touch();
+                    if (a.Length == 0) return;
+                    if (m_ConnUi.PairMode || !link.Snapshot.Paired) link.BeginPairingAt(a); else { link.SetManualAddress(a); link.RetryNow(); }
+                }, () => m_ConnUi.Typed.Length > 0));
+                m_Conn.Add(MakeBtn(new Vector2(Style.Margin + 2 * (hw + Style.ColGap), y - bh), new Vector2(hw, bh), () => "Cancel", () => { m_ConnUi.Typing = false; m_ConnUi.Touch(); }, null));
+                return;
+            }
+            foreach (var a in view.Actions)
+            {
+                var act = a;
+                m_Conn.Add(MakeBtn(new Vector2(Style.Margin, y - bh), new Vector2(full, bh), () => act.Label, act.Do, () => act.Highlight));
+                y -= bh + gap;
+            }
+            m_Conn.Add(MakeBtn(new Vector2(Style.Margin, 38), new Vector2(full, 70), () => "Back", ShowMain, null));
         }
 
         // ------------------------------------------------------------------ Depth Lab page (experimental, only reachable when depthlab.flag exists)
@@ -408,7 +484,16 @@ namespace XrSpatial.App
             if (!Visible) return;
             Place();
             if (m_Page == Page.Windows && m_RebuildWindows) BuildWindowButtons();
-            string mode = m_Page == Page.Windows ? "CHOOSE A WINDOW TO CAPTURE" : m_Page == Page.Labs ? "DEPTH LAB (EXPERIMENTAL)" : Tool.Mode == ToolMode.Place ? $"PLACE: point {Tool.PlacedCount + 1} of 4" : Tool.Mode == ToolMode.Crop ? "CROP: drag a box on a screen" : Tool.InteractMode ? "INTERACT" : "EDIT";
+            if (RemoteHost.Active && RemoteHost.Link != null)
+            {
+                // a paired PC that needs the user (not paired yet, or it removed this headset) brings the connection page up once; a working link stays out of the way
+                var cs = RemoteHost.Link.Snapshot;
+                bool needs = cs.Mode == LinkMode.PairedLan && (cs.State == LinkState.NotPaired || (cs.State == LinkState.Error && (cs.Error == LinkError.Removed || cs.Error == LinkError.WrongPc)));
+                if (needs && !m_ConnPrompted && m_Page == Page.Main) { m_ConnPrompted = true; ShowConnection(); }
+                if (!needs && cs.State != LinkState.Pairing) m_ConnPrompted = false;
+                if (m_Page == Page.Connection && ConnSig() != m_ConnSig) BuildConnection();
+            }
+            string mode = m_Page == Page.Connection ? "PC CONNECTION" : m_Page == Page.Windows ? "CHOOSE A WINDOW TO CAPTURE" : m_Page == Page.Labs ? "DEPTH LAB (EXPERIMENTAL)" : Tool.Mode == ToolMode.Place ? $"PLACE: point {Tool.PlacedCount + 1} of 4" : Tool.Mode == ToolMode.Crop ? "CROP: drag a box on a screen" : Tool.InteractMode ? "INTERACT" : "EDIT";
             var src = Workspace.GetSource(Workspace.ActiveSourceId);
             var def = Workspace.Layout.FindSource(Workspace.ActiveSourceId);
             string srcLine = def != null ? $"{(string.IsNullOrEmpty(def.label) ? def.id : def.label)}: {src?.Status}" : "no source: choose a window";

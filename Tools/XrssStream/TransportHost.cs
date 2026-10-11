@@ -19,6 +19,7 @@ sealed class TransportHost
     DeviceStore m_Store;
     PairingWindow m_Window;
     SecureListener m_Listener;
+    MdnsAdvertiser m_Mdns;
 
     public static string Dir => Environment.GetEnvironmentVariable("XRSS_HOST_DIR") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XrSpatialScreens", "host");
 
@@ -40,6 +41,16 @@ sealed class TransportHost
             finally { HostSessions.Leave(); }
         };
         var addresses = LanInterfaces.PrivateIPv4();
+        // discovery: the PC is announced on the network only while the secure listener is bound (something paired or pairing open)
+        m_Listener.ListeningChanged += on =>
+        {
+            try
+            {
+                if (on) { m_Mdns?.Stop(); m_Mdns = new MdnsAdvertiser(Environment.MachineName, m_Identity.HostIdHex, m_Listener.Port, addresses, m_Log); m_Mdns.Start(); }
+                else { m_Mdns?.Stop(); m_Mdns = null; }
+            }
+            catch (Exception e) { m_Log.Info("mdns: " + e.Message); }
+        };
         m_Listener.StartManaged(addresses, m_Port);
         Console.WriteLine($"paired LAN transport ready: TLS 1.2, port {m_Port}, interfaces [{string.Join(", ", addresses)}], {m_Store.Count} paired device(s); the port opens only while a device is paired or pairing is open");
         Console.WriteLine("host id " + m_Identity.HostIdHex.Substring(0, 8) + ", certificate fingerprint " + AuthCrypto.Hex(m_Identity.Fingerprint));

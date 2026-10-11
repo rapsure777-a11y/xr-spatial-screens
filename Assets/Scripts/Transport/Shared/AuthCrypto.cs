@@ -5,14 +5,16 @@ using System.Text;
 namespace XrssTransport
 {
     /// <summary>
-    /// Every cryptographic computation of the pairing and authentication protocol, in one small file. Only SHA-256, HMAC-SHA256, the secure RNG and a constant-time compare are used:
-    /// exactly the primitives proven to work on the Steam Frame (see Docs/PAIRING_SPIKE_RESULTS.md), so the headset side can use the same formulas.
+    /// Every cryptographic computation of the pairing and authentication protocol, in one small file. THIS FILE IS SHARED SOURCE: the PC host (Tools/XrssTransport) and the headset app
+    /// (Unity assembly XrSpatial.Transport) compile the same file, so the two sides cannot disagree about a formula. Only SHA-256, HMAC-SHA256, the secure RNG and a hand-written
+    /// constant-time compare are used: exactly the primitives proven to work on the Steam Frame (Docs/PAIRING_SPIKE_RESULTS.md). Nothing newer than .NET Standard 2.1 is used.
+    /// Known test vectors for every formula live in Docs/PAIRING_TEST_VECTORS.md and are asserted on both sides.
     /// </summary>
     public static class AuthCrypto
     {
         public const int IdLength = 16, SecretLength = 32, ChallengeLength = 32, NonceLength = 32, MacLength = 32;
 
-        public static byte[] Random(int n) { var b = new byte[n]; RandomNumberGenerator.Fill(b); return b; }
+        public static byte[] Random(int n) { var b = new byte[n]; using (var r = RandomNumberGenerator.Create()) r.GetBytes(b); return b; }
 
         /// <summary>HMAC-SHA256(secret, "XRSS-AUTH-v1" || host-id || device-id || challenge).</summary>
         public static byte[] AuthMac(byte[] secret, byte[] hostId, byte[] deviceId, byte[] challenge)
@@ -28,7 +30,14 @@ namespace XrssTransport
             }
         }
 
-        public static bool MacEquals(byte[] a, byte[] b) => a != null && b != null && a.Length == b.Length && CryptographicOperations.FixedTimeEquals(a, b);
+        /// <summary>Constant-time comparison of two byte arrays (length differences are not secret).</summary>
+        public static bool MacEquals(byte[] a, byte[] b)
+        {
+            if (a == null || b == null || a.Length != b.Length) return false;
+            int diff = 0;
+            for (int i = 0; i < a.Length; i++) diff |= a[i] ^ b[i];
+            return diff == 0;
+        }
 
         /// <summary>SAS commitment: SHA-256("XRSS-SAS-commit-v1" || Nc). Sent by the headset before it sees the host's nonce.</summary>
         public static byte[] Commit(byte[] nc) => Sha("XRSS-SAS-commit-v1", nc);
@@ -42,7 +51,7 @@ namespace XrssTransport
             return (v % 1000000u).ToString("D6");
         }
 
-        public static byte[] Fingerprint(byte[] certificateRawData) => SHA256.HashData(certificateRawData);
+        public static byte[] Fingerprint(byte[] certificateRawData) { using (var h = SHA256.Create()) return h.ComputeHash(certificateRawData); }
 
         static byte[] Sha(string label, params byte[][] parts)
         {
@@ -56,7 +65,19 @@ namespace XrssTransport
             }
         }
 
-        public static string Hex(byte[] b) => Convert.ToHexString(b);
-        public static byte[] FromHex(string s) => Convert.FromHexString(s);
+        public static string Hex(byte[] b)
+        {
+            var sb = new StringBuilder(b.Length * 2);
+            foreach (var x in b) sb.Append(x.ToString("X2"));
+            return sb.ToString();
+        }
+
+        public static byte[] FromHex(string s)
+        {
+            if (s == null || s.Length % 2 != 0) throw new FormatException("bad hex");
+            var b = new byte[s.Length / 2];
+            for (int i = 0; i < b.Length; i++) b[i] = Convert.ToByte(s.Substring(2 * i, 2), 16);
+            return b;
+        }
     }
 }
