@@ -12,6 +12,11 @@ Goal: a customer with a Steam Frame and a Windows PC connects with no adb, no de
 | Pairing expiry | None at first; host lists and revokes devices; reconsider 30 days idle |
 | Port exposure | LAN bind only while a device is paired or a pairing window is open; private network profile only |
 
+## Architecture rules (reviewer checks)
+1. **Dev path preserved.** Loopback + `adb reverse` stays selectable by address (plain TCP, no pairing) and keeps working unchanged; `host.ps1` and the supervisor are not removed. Tests for it keep running.
+2. **Pairing isolated under the transport.** All TLS, certificates, pairing and discovery live behind one transport interface beneath `RemoteHost` (headset) and the connection listener in `XrssStream` (PC). The framed protocol (`XRS2`, `XRSL`, `XRSS`, ...), capture, input, audio, cursor and panel code do not know whether the link is loopback or TLS. A feature file that mentions a certificate or a pairing code is a bug.
+3. **Consumer flow is four steps:** discover the PC (mDNS, typed address as backup), confirm the matching 6-digit code on both screens, trust once (both sides store the fingerprint), reconnect automatically after that with no prompts. Anything that adds a step to this flow needs a reason written in the doc.
+
 ## Steps (each ends with a check you can run)
 1. **Spike (first, decides everything).** In a throwaway Android build, run `SslStream` mutual TLS with self-signed pinning and mDNS (`_xrss._tcp`) discovery against a PC test server. Check: Frame connects over Wi-Fi and over the dongle network; report whether Mono TLS 1.3 and mDNS work. Fallbacks: manual IP entry; Noise.
 2. **Host core.** LAN listener wrapped in TLS, host certificate (DPAPI), paired-device store, pairing window (2 min, 3 wrong tries closes it), refusal log, protocol version byte. Check: unit tests with a scripted client (unpaired refused, wrong code refused, replay refused, revoked drops live link); existing loopback tests unchanged.
