@@ -60,10 +60,17 @@ static unsafe class Program
 
         if (transport == "lan") { lan.RunAdminConsole(); return 0; }
 
+        if (lan != null) lan.StartAdminConsoleThread();
+        RunDevLoop(port);
+        return 0;
+    }
+
+    /// <summary>The developer transport: plain TCP on loopback (reached through `adb reverse`), one headset at a time. Never returns. Unchanged behaviour, shared by the console host and the host app's hidden --dev option.</summary>
+    public static void RunDevLoop(int port)
+    {
         var listener = new TcpListener(IPAddress.Loopback, port);
         listener.Start();
         Console.WriteLine($"listening on 127.0.0.1:{port} (jpeg q{Quality} 4:4:4, max width {MaxW}, {Fps} fps cap, helper {CapturePath})");
-        if (lan != null) lan.StartAdminConsoleThread();
         while (true)
         {
             using var client = listener.AcceptTcpClient();

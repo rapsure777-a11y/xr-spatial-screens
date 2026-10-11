@@ -17,5 +17,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\XrssTransport\XrssTransport.csproj" />
+    <!-- the Windows host app (its view-model is tested here against the real host core) -->
+    <ProjectReference Include="..\XrssHost\XrssHost.csproj" />
   </ItemGroup>
 </Project>

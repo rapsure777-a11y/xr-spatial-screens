@@ -4,6 +4,9 @@ using System.Threading.Tasks;
 
 namespace XrssTransport
 {
+    /// <summary>Why a ceremony ended without enrolling. The UI turns this into plain wording; <c>why</c> strings stay in the log.</summary>
+    public enum PairingFailure { Other, HeadsetCodesDiffer, PcCodesDiffer, Timeout, Disconnected, WindowClosed }
+
     /// <summary>One pairing ceremony in progress on the PC. Created only by <see cref="PairingWindow.TryBegin"/>, so it can exist only while the window is open.</summary>
     public sealed class PairingSession
     {
@@ -19,7 +22,7 @@ namespace XrssTransport
         public string Code { get; internal set; }
         public Task<bool> PcDecision => m_PcDecision.Task;
         internal void SetPcDecision(bool match) => m_PcDecision.TrySetResult(match);
-        public void Fail(string why) => m_Window.EndFailed(this, why);
+        public void Fail(string why, PairingFailure kind = PairingFailure.Other) => m_Window.EndFailed(this, why, kind);
         public void Complete() => m_Window.EndCompleted(this);
         /// <summary>The connection ended without a result. Counts as a failure only if a code had already been shown.</summary>
         public void Abandon() => m_Window.EndAbandoned(this);
@@ -44,6 +47,8 @@ namespace XrssTransport
         PairingSession m_Active;
 
         public event Action Changed;
+        /// <summary>A ceremony ended without enrolling (kind, technical reason). The window may have closed because of it: check <see cref="IsOpen"/>.</summary>
+        public event Action<PairingFailure, string> Failed;
         /// <summary>The code is ready for the PC user to compare with the headset.</summary>
         public event Action<PairingSession> CodeReady;
 
@@ -97,7 +102,7 @@ namespace XrssTransport
             return true;
         }
 
-        internal void EndFailed(PairingSession s, string why)
+        internal void EndFailed(PairingSession s, string why, PairingFailure kind = PairingFailure.Other)
         {
             bool closed = false;
             lock (m_Lock)
@@ -110,6 +115,7 @@ namespace XrssTransport
                 if (m_Failures >= m_MaxFailures) { m_Open = false; closed = true; }
             }
             if (closed) m_Log.Info("pairing closed: too many failures");
+            Failed?.Invoke(kind, why);
             Changed?.Invoke();
         }
 
@@ -124,7 +130,7 @@ namespace XrssTransport
         {
             bool shown;
             lock (m_Lock) { shown = s.Code != null && !s.Done; if (!shown) { if (!s.Done && m_Active == s) m_Active = null; s.Done = true; } }
-            if (shown) EndFailed(s, "connection ended after the code was shown");
+            if (shown) EndFailed(s, "connection ended after the code was shown", PairingFailure.Disconnected);
         }
 
         bool CloseCore(string reason)

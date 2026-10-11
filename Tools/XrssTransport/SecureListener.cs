@@ -107,8 +107,8 @@ namespace XrssTransport
                 if (want && m_Listeners.Count == 0)
                 {
                     foreach (var a in m_Addresses)
-                        try { var l = new TcpListener(a, m_ManagedPort); l.Start(); m_Listeners.Add(l); Port = ((IPEndPoint)l.LocalEndpoint).Port; m_Log.Info("lan listener bound to " + a + ":" + Port); _ = AcceptLoop(l); }
-                        catch (Exception e) { m_Log.Info("lan listener could not bind " + a + ": " + e.Message); }
+                        try { var l = new TcpListener(a, m_ManagedPort); l.Start(); BindError = null; m_Listeners.Add(l); Port = ((IPEndPoint)l.LocalEndpoint).Port; m_Log.Info("lan listener bound to " + a + ":" + Port); _ = AcceptLoop(l); }
+                        catch (Exception e) { BindError = e is SocketException se && se.SocketErrorCode == SocketError.AddressAlreadyInUse ? "port " + m_ManagedPort + " is in use by another program" : e.Message; m_Log.Info("lan listener could not bind " + a + ": " + e.Message); }
                 }
                 if (want && m_Listeners.Count > 0 && !m_Announced) { m_Announced = true; ThreadPool.QueueUserWorkItem(_ => ListeningChanged?.Invoke(true)); }
                 else if (!want && m_Listeners.Count > 0)
@@ -122,6 +122,8 @@ namespace XrssTransport
         }
 
         public bool IsListening { get { lock (m_Lock) return m_Listeners.Count > 0; } }
+        /// <summary>The last reason a bind failed (port taken, ...), or null. Shown by the host app instead of failing silently.</summary>
+        public string BindError { get; private set; }
 
         async Task AcceptLoop(TcpListener l)
         {
@@ -281,17 +283,17 @@ namespace XrssTransport
 
                 // the headset user confirms (Confirm carries the new secret) or cancels; the PC user confirms through PairingWindow.ConfirmOnPc
                 var clientTask = ReadUntil(ssl);
-                if (!await WaitFor(clientTask, session)) return await PairFail(ssl, session, ip, "timed out waiting for the headset");
+                if (!await WaitFor(clientTask, session)) return await PairFail(ssl, session, ip, "timed out waiting for the headset", PairingFailure.Timeout);
                 m = clientTask.Result;
-                if (m.type == MsgType.Cancel) return await PairFail(ssl, session, ip, "headset reported a different code");
+                if (m.type == MsgType.Cancel) return await PairFail(ssl, session, ip, "headset reported a different code", PairingFailure.HeadsetCodesDiffer);
                 if (m.type != MsgType.Confirm || m.p.Length < 33) return await PairFail(ssl, session, ip, "bad confirmation");
                 secret = m.p.Take(AuthCrypto.SecretLength).ToArray();
                 int labelLen = m.p[AuthCrypto.SecretLength];
                 string label = SanitizeLabel(m.p.Length >= 33 + labelLen ? Encoding.UTF8.GetString(m.p, 33, labelLen) : "");
 
-                if (!await WaitFor(session.PcDecision, session)) return await PairFail(ssl, session, ip, "timed out waiting for the PC user");
-                if (!session.PcDecision.Result) return await PairFail(ssl, session, ip, "PC user said the codes differ");
-                if (!m_Window.IsCurrent(session)) return await PairFail(ssl, session, ip, "pairing window closed");
+                if (!await WaitFor(session.PcDecision, session)) return await PairFail(ssl, session, ip, "timed out waiting for the PC user", PairingFailure.Timeout);
+                if (!session.PcDecision.Result) return await PairFail(ssl, session, ip, "PC user said the codes differ", PairingFailure.PcCodesDiffer);
+                if (!m_Window.IsCurrent(session)) return await PairFail(ssl, session, ip, "pairing window closed", PairingFailure.WindowClosed);
 
                 m_Store.Enroll(deviceHex, label, m_Identity.HostIdHex, secret);
                 session.Complete();
@@ -312,9 +314,9 @@ namespace XrssTransport
             }
         }
 
-        async Task<AuthenticatedConnection> PairFail(Stream ssl, PairingSession session, string ip, string why)
+        async Task<AuthenticatedConnection> PairFail(Stream ssl, PairingSession session, string ip, string why, PairingFailure kind = PairingFailure.Other)
         {
-            session.Fail(why);
+            session.Fail(why, kind);
             m_PairLimits.Failure(ip);
             await Reject(ssl, RejectCode.PairingFailed).ConfigureAwait(false);
             return null;
@@ -362,7 +364,7 @@ namespace XrssTransport
             m_Stop.Cancel();
             m_Timer?.Dispose();
             lock (m_Lock) { foreach (var l in m_Listeners) l.Stop(); m_Listeners.Clear(); }
-            m_Store.Removed -= DropDevice;
+            m_Store.Removed -= DropDevice; m_Store.Changed -= Refresh; m_Window.Changed -= Refresh;
             lock (m_Live) foreach (var c in m_Live) try { c.Client.Dispose(); } catch { }
         }
     }

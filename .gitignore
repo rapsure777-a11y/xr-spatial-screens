@@ -46,3 +46,5 @@ Tools/XrssTransport.Tests/bin/
 Tools/XrssTransport.Tests/obj/
 Tools/PairingSpike/bin/
 Tools/PairingSpike/obj/
+Tools/XrssHost/bin/
+Tools/XrssHost/obj/

@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>12</LangVersion>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <AssemblyName>XrSpatialScreensHost</AssemblyName>
+    <RootNamespace>XrssHostApp</RootNamespace>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Resources\app.ico</ApplicationIcon>
+    <Product>XR Spatial Screens Host</Product>
+    <Company>Gamebreak Labs</Company>
+    <Version>0.1.0</Version>
+    <AssemblyTitle>XR Spatial Screens Host</AssemblyTitle>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- the unchanged host (capture, streaming, input, audio) and its transport glue; this project is only a second front end for TransportHost -->
+    <ProjectReference Include="..\XrssStream\XrssStream.csproj" />
+    <ProjectReference Include="..\XrssTransport\XrssTransport.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="XrssTransport.Tests" />
+  </ItemGroup>
+</Project>
