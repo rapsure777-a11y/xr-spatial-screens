@@ -22,7 +22,7 @@ namespace XrssHostApp
         readonly List<Label> m_Wrap = new List<Label>();
 
         StatusDot m_Dot; Label m_Headline, m_Detail, m_Notice, m_HostVal, m_HeadsetVal, m_ConnVal;
-        Button m_Pair, m_StartStop;
+        Button m_Pair, m_StartStop, m_Launch; Label m_LaunchMsg;
         Panel m_PairCard; Label m_PairTitle, m_PairBody, m_Countdown, m_Code, m_PairResult; Button m_Same, m_Differ, m_Cancel, m_Dismiss, m_PairAgain;
         ListView m_List; Button m_Remove, m_RemoveAll; Label m_Empty;
         CheckBox m_AutoBox; bool m_SettingAuto;
@@ -95,8 +95,11 @@ namespace XrssHostApp
             var row = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 14) };
             m_Pair = Theme.Button("Pair Headset", true, 220); m_Pair.Click += (s, e) => m_C.PairHeadset();
             m_StartStop = Theme.Button("Stop Host", false, 130); m_StartStop.Height = 46; m_StartStop.Click += (s, e) => { if (m_C.IsRunning) m_C.StopHost(); else m_C.StartHost(); };
-            row.Controls.Add(m_Pair); row.Controls.Add(m_StartStop);
+            m_Launch = Theme.Button("Launch on Headset", false, 190); m_Launch.Height = 46; m_Launch.Click += (s, e) => m_C.LaunchHeadset();
+            row.Controls.Add(m_Pair); row.Controls.Add(m_StartStop); row.Controls.Add(m_Launch);
             Add(row, false);
+            m_LaunchMsg = Theme.Label("", 10f, Theme.Dim); m_LaunchMsg.Margin = new Padding(0, 0, 0, 10); m_LaunchMsg.Visible = false; m_Wrap.Add(m_LaunchMsg);
+            Add(m_LaunchMsg, false);
 
             BuildPairCard();
             BuildDevices();
@@ -195,6 +198,7 @@ namespace XrssHostApp
             m_Dot.Tone = Theme.ToneColor(st.Tone);
             m_Headline.Text = st.Headline; m_Detail.Text = st.Detail;
             m_Notice.Text = st.Notice ?? ""; m_Notice.Visible = st.Notice != null;
+            m_LaunchMsg.Text = st.LaunchStatus ?? ""; m_LaunchMsg.Visible = st.LaunchStatus != null; m_Launch.Enabled = !st.Launching;
             m_HostVal.Text = st.Running ? "Running" : "Stopped";
             m_HeadsetVal.Text = st.HeadsetConnected ? "Connected  -  " + st.HeadsetLabel : "Not connected";
             m_ConnVal.Text = !st.HeadsetConnected ? "-" : (st.Connection ?? "Local network") + (st.LocalAddress != null && st.Connection != "Developer (adb)" ? "  -  " + st.LocalAddress + ":" + st.Port : "");

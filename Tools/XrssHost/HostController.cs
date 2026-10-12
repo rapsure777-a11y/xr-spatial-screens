@@ -38,6 +38,8 @@ namespace XrssHostApp
         public TimeSpan PairingRemaining;
         public string Code;                // only while Stage == CodeShown
         public string PairMessage;         // success/failure wording for the pairing panel
+        public string LaunchStatus;        // the result of the last "Launch on Headset" click (null until one happens)
+        public bool Launching;             // a launch attempt is running
         public string Notice;              // something the user should know (no network, port in use, identity replaced, ...)
         public List<DeviceRow> Devices = new List<DeviceRow>();
     }
@@ -63,6 +65,24 @@ namespace XrssHostApp
         Timer m_NetTimer;
 
         public event Action Changed;
+
+        /// <summary>Starts the headset app over adb (see <see cref="HeadsetLauncher"/>); null in tests that do not need it.</summary>
+        public HeadsetLauncher Launcher { get; set; }
+        string m_LaunchStatus; bool m_Launching;
+
+        /// <summary>The "Launch on Headset" button: runs in the background, reports through the status and a balloon.</summary>
+        public void LaunchHeadset()
+        {
+            var l = Launcher; if (l == null || m_Launching) return;
+            m_Launching = true; m_LaunchStatus = "Starting the app on the headset..."; Changed?.Invoke();
+            l.LaunchAsync().ContinueWith(t =>
+            {
+                string msg = t.IsFaulted ? "Could not start the headset app: " + t.Exception.GetBaseException().Message : t.Result.Message;
+                m_Log.Info("launch on headset: " + msg);
+                m_LaunchStatus = msg; m_Launching = false;
+                Toast?.Invoke(msg); Changed?.Invoke();
+            });
+        }
         /// <summary>The window should come to the front: a code is waiting for the user.</summary>
         public event Action AttentionNeeded;
         /// <summary>A short message for a balloon in the notification area (pairing finished, headset removed).</summary>
@@ -149,6 +169,7 @@ namespace XrssHostApp
         void OnHostChanged()
         {
             var a = m_Host.Active;
+            if (a != null) Launcher?.Remember(a.Remote);          // the address the headset really uses, for "Launch on Headset" later
             lock (m_Lock)
             {
                 if (a != null) { m_WasConnected = true; m_LastDisconnect = null; }
@@ -204,7 +225,7 @@ namespace XrssHostApp
 
         public HostStatus Snapshot()
         {
-            var st = new HostStatus { Running = m_Host.IsRunning, Port = m_Host.Port };
+            var st = new HostStatus { Running = m_Host.IsRunning, Port = m_Host.Port, LaunchStatus = m_LaunchStatus, Launching = m_Launching };
             var window = m_Host.Window;
             var a = m_Host.Active;
             bool devActive = HostSessions.DevActive;

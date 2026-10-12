@@ -48,6 +48,7 @@ namespace XrssHostApp
 
                 var host = new TransportHost(int.Parse(Arg("lan-port", "5610")), log) { PrintToConsole = false };
                 var controller = new HostController(host, log) { CapturePath = global::Program.CapturePath };
+                controller.Launcher = new HeadsetLauncher(TransportHost.Dir, AppContext.BaseDirectory);
                 var auto = new Autostart();
                 try { auto.Refresh(exe); } catch (Exception) { }
                 controller.StartHost();
