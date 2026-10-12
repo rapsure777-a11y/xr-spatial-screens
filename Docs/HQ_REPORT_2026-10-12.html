@@ -1,0 +1,115 @@
+<title>Spatial Crop HQ Report 12 Oct</title>
+<style>
+:root {
+  /* layout: one reading column, status strip first, evidence tables, then decisions */
+  --bg: #f6f7f5; --fg: #1b2420; --muted: #5a6761; --line: #d9dfdb; --card: #ffffff;
+  --accent: #0b7a5a; --good: #12805c; --warn: #a15c00; --bad: #b3261e; --chip: #e5efe9;
+  --display: "Fraunces", Georgia, serif; --body: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121815; --fg: #e6ece8; --muted: #9aa8a1; --line: #2b3630; --card: #19211d;
+  --accent: #4cc9a0; --good: #4cc9a0; --warn: #e0a447; --bad: #f08a80; --chip: #22302a; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #121815; --fg: #e6ece8; --muted: #9aa8a1; --line: #2b3630; --card: #19211d;
+  --accent: #4cc9a0; --good: #4cc9a0; --warn: #e0a447; --bad: #f08a80; --chip: #22302a; color-scheme: dark; }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); line-height: 1.55; padding-inline: 16px; padding-block: 28px 56px; }
+main { max-width: 760px; margin-inline: auto; display: flex; flex-direction: column; gap: 28px; }
+h1, h2 { font-family: var(--display); text-wrap: balance; line-height: 1.15; margin: 0; font-weight: 600; }
+h1 { font-size: 2rem; } h2 { font-size: 1.3rem; }
+p { margin: 0; } ul { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; }
+.meta { color: var(--muted); font-family: var(--mono); font-size: 0.8rem; letter-spacing: 0.02em; }
+section { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.gate { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.gate b { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+.pill { display: inline-block; font-family: var(--mono); font-size: 0.75rem; padding: 2px 8px; border-radius: 99px; width: fit-content; }
+.pill.pass { background: var(--chip); color: var(--good); } .pill.fail { background: var(--chip); color: var(--bad); }
+.pill.next { background: var(--chip); color: var(--warn); }
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; min-width: 480px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; } th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+code { font-family: var(--mono); font-size: 0.85em; background: var(--chip); padding: 1px 5px; border-radius: 4px; }
+.callout { border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=IBM+Plex+Mono&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<main>
+  <header>
+    <p class="meta">XR SPATIAL SCREENS · SPATIAL CROP · 12 OCT 2026</p>
+    <h1>The PC host app pairs with the headset and streams real windows. The product loop now works end to end.</h1>
+  </header>
+
+  <section>
+    <p>Since the 7 Oct report the work moved from proofs to a usable product: a one-click Windows tray app, secure pairing with the Steam Frame, automatic reconnect, and a headset app with placement, tilt, controller outlines, PC cursor, sound, keyboard and side-by-side 3D. The user tested each on the real Frame. <code>develop</code> holds all of it (<code>3635c32</code>, pushed).</p>
+    <div class="strip">
+      <div class="gate"><b>Pairing</b><span class="pill pass">Verified on Frame</span><span>Six-digit code confirmed on both sides; reconnect with no code.</span></div>
+      <div class="gate"><b>PC host app</b><span class="pill pass">Hand-tested</span><span>Tray app, desktop shortcut, window list, 102 automated tests pass.</span></div>
+      <div class="gate"><b>Headset features</b><span class="pill pass">User-confirmed</span><span>Tilt, controller outline, PC cursor, SBS 3D, sound.</span></div>
+      <div class="gate"><b>Release</b><span class="pill next">Not yet</span><span>No installer, Steam page or main promotion.</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What works, and who confirmed it</h2>
+    <div class="tablewrap"><table>
+      <tr><th>Area</th><th>Result</th><th>Evidence</th></tr>
+      <tr><td>Discover, pair, stream</td><td>Works</td><td>Frame found the PC by mDNS; the code matched on both sides; windows, clicks, keyboard, cursor and sound worked over the paired link.</td></tr>
+      <tr><td>Reconnect</td><td>Works</td><td>No code needed. <span class="num">139 to 148 ms</span> over the fast address; recovered about 1.4 s after the PC host restarted.</td></tr>
+      <tr><td>Removing a headset</td><td>Works</td><td>Live connection dropped at once; headset stopped retrying and offered Pair again; pairing again worked twice.</td></tr>
+      <tr><td>Frame rate</td><td>144 fps</td><td>Slowest frame 7 ms in the paired-link run, same as the old dev link.</td></tr>
+      <tr><td>Tray app on the real PC</td><td>Works</td><td>Windows list appeared and streamed after one packaging fix (see below).</td></tr>
+      <tr><td>Edge tilt, controller outline, PC cursor, depth Labs</td><td>Works</td><td>User: "work great" / "everything worked well".</td></tr>
+      <tr><td>Full side-by-side 3D</td><td>Works</td><td>User tested a clip.</td></tr>
+      <tr><td>PC sound</td><td>Works</td><td>Audio streams (about 99 packets per interval); a silent test was a silent clip.</td></tr>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Security as built</h2>
+    <ul>
+      <li>TLS 1.2 with the PC certificate pinned by SHA-256 fingerprint; there is no fallback that skips the check.</li>
+      <li>First pairing uses a commit-then-reveal six-digit code that the user confirms on both PC and headset. Nothing is automatic; cancel, mismatch or timeout stores nothing.</li>
+      <li>Reconnect proves identity with an HMAC challenge using a per-device secret. The headset refuses to answer a PC whose identity changed.</li>
+      <li>Honest limit: on the headset the secret is a private file in the app's own storage, not the Android Keystore. Someone who roots the headset could read it. Keystore wrapping is a known hardening step, not done.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Problems found and what was done</h2>
+    <div class="tablewrap"><table>
+      <tr><th>Problem</th><th>Cause</th><th>Status</th></tr>
+      <tr><td>Windows list empty although "connected"</td><td>The published tray app was missing the capture helper (<code>XrssCapture.exe</code>).</td><td>Fixed. <code>Tools/publish-host-app.ps1</code> now publishes both.</td></tr>
+      <tr><td>Slow first feel on the paired link</td><td>The client picked the router address (24 ms) over the dongle link (1 ms).</td><td>Fixed by ranking addresses by probe time.</td></tr>
+      <tr><td>Palette too tall; brand footer</td><td>Fixed height with a footer line.</td><td>Footer removed, empty strip trimmed. User: still a bit long, accepted for now.</td></tr>
+      <tr><td>App killed by Android after being paused</td><td>Android reported "input dispatching timed out" and killed the app about 5 s after a full pause. Cause not found.</td><td>Open. A 20-second headset removal did not reproduce it. No code changed.</td></tr>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Decisions for HQ</h2>
+    <ul>
+      <li><b>Promote <code>develop</code> to <code>main</code>?</b> Frame tests have passed. Recommended yes.</li>
+      <li><b>Keystore hardening</b> for the device secret before any wider release.</li>
+      <li><b>Distribution:</b> installer for the PC app (currently a 155 MB single-file exe plus helper) and how headset builds reach users. Neither exists yet.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Not built</h2>
+    <ul>
+      <li>Hardware video (HEVC) and the LAN design review live only on <code>claude/hardware-video</code>, excluded from <code>develop</code>.</li>
+      <li>Per-window sound, "window closed" look polish, auto stream width, firewall handling, Steam deployment.</li>
+      <li>The headset's pause behaviour (above) and long-session stability have no dedicated testing.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Where things are</h2>
+    <ul>
+      <li>Repo <code>rapsure777-a11y/xr-spatial-screens</code>, branch <code>develop</code> at <code>3635c32</code>.</li>
+      <li>Detail: <code>Docs/HEADSET_PAIRING_REPORT.md</code>, <code>Docs/HOST_CORE_REPORT.md</code>, <code>Docs/PAIRING_PLAN.md</code>, <code>Docs/SPEC_2026-10-10.md</code>.</li>
+      <li>PC app: <code>Builds\HostApp\XrSpatialScreensHost.exe</code> (desktop shortcut "XR Spatial Screens Host"). Headset APK: <code>Builds/Headset/XrSpatialScreens.apk</code>.</li>
+    </ul>
+  </section>
+</main>
