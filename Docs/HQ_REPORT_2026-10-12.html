@@ -41,7 +41,7 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--chip); pad
   </header>
 
   <section>
-    <p>Since the 7 Oct report the work moved from proofs to a usable product: a one-click Windows tray app, secure pairing with the Steam Frame, automatic reconnect, and a headset app with placement, tilt, controller outlines, PC cursor, sound, keyboard and side-by-side 3D. The user tested each on the real Frame. <code>develop</code> holds all of it (<code>f9b9735</code>, pushed).</p>
+    <p>Since the 7 Oct report the work moved from proofs to a usable product: a one-click Windows tray app, secure pairing with the Steam Frame, automatic reconnect, and a headset app with placement, tilt, controller outlines, PC cursor, sound, keyboard and side-by-side 3D. The user tested each on the real Frame. <code>develop</code> holds all of it (<code>b533bcf</code>, pushed).</p>
     <div class="strip">
       <div class="gate"><b>Pairing</b><span class="pill pass">Verified on Frame</span><span>Six-digit code confirmed on both sides; reconnect with no code.</span></div>
       <div class="gate"><b>PC host app</b><span class="pill pass">Hand-tested</span><span>Tray app, desktop shortcut, window list, 102 automated tests pass.</span></div>
@@ -63,6 +63,7 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--chip); pad
       <tr><td>Full side-by-side 3D</td><td>Works</td><td>User tested a clip.</td></tr>
       <tr><td>Better AI depth (Depth Lab)</td><td>Works, modest gain</td><td>Depth Anything 3 Base added (Apache-2.0): on a test scene it found real panel shapes where the small model gave soft blobs, at 49 ms per map against 104 ms. User: "somewhat better". An in-app switch cycles the installed models.</td></tr>
       <tr><td>Edge-aware depth smoothing</td><td>Built, little visible effect</td><td>Optional slider, off by default; the PC filter works (tested) but the user saw almost no difference, even with a finer mesh. Treated as a small gain.</td></tr>
+      <tr><td>Launch on Headset (PC app)</td><td>Works</td><td>Button in the host window and tray menu starts the headset app over adb (remembers the headset's addresses, falls back to the dongle address). Real start verified by the user; 7 tests with a fake adb.</td></tr>
       <tr><td>PC sound</td><td>Works</td><td>Audio streams (about 99 packets per interval); a silent test was a silent clip.</td></tr>
     </table></div>
   </section>
@@ -84,7 +85,7 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--chip); pad
       <tr><td>Windows list empty although "connected"</td><td>The published tray app was missing the capture helper (<code>XrssCapture.exe</code>).</td><td>Fixed. <code>Tools/publish-host-app.ps1</code> now publishes both.</td></tr>
       <tr><td>Slow first feel on the paired link</td><td>The client picked the router address (24 ms) over the dongle link (1 ms).</td><td>Fixed by ranking addresses by probe time.</td></tr>
       <tr><td>Palette too tall; brand footer</td><td>Fixed height with a footer line.</td><td>Footer removed, empty strip trimmed. User: still a bit long, accepted for now.</td></tr>
-      <tr><td>App killed by Android after being paused</td><td>Once, Android reported "input dispatching timed out" and killed the app about 5 s after it was paused. Cause not found.</td><td>Not reproduced. A 20-second removal left the app running, and the user reports it stays on when the headset comes off. No code changed; if it recurs, the log from that moment is the evidence needed.</td></tr>
+      <tr><td>App killed by Android after being paused</td><td>The headset closed the app twice. Log from the second time: the headset's own runtime ended the session (focused, stopping, exiting) when the wearer walked out of range, the app quit as asked, and Android force-killed the slow shutdown 5 s later.</td><td>Explained, not an app bug. Taking the headset off does not close it. Because the app is not in the headset's menu, restarting it needs the PC, which led to the Launch on Headset button below.</td></tr>
     </table></div>
   </section>
 
@@ -93,6 +94,7 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--chip); pad
     <ul>
       <li><b>Promote <code>develop</code> to <code>main</code>?</b> Frame tests have passed. Recommended yes.</li>
       <li><b>Model licenses:</b> the bigger Depth Anything V2 models (Base, Large) are non-commercial, so they were not used. Depth Anything 3 Small and Base are Apache-2.0. Large and Giant are non-commercial. Stay on the Apache models for any product.</li>
+      <li><b>How the headset app reaches customers.</b> The app is a developer build that is not in the Frame's menu, and today it is installed and started from the PC over adb. The proposal is for the PC app to be the companion that installs, updates and launches it (an Install or Update button is next). This depends on the customer's Frame allowing developer mode and network adb, and on adb's redistribution terms. Valve's own distribution route for third-party apps has not been checked yet and would replace this if it exists.</li>
       <li><b>Keystore hardening</b> for the device secret before any wider release.</li>
       <li><b>Distribution:</b> installer for the PC app (currently a 155 MB single-file exe plus helper) and how headset builds reach users. Neither exists yet.</li>
     </ul>
@@ -110,7 +112,7 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--chip); pad
   <section>
     <h2>Where things are</h2>
     <ul>
-      <li>Repo <code>rapsure777-a11y/xr-spatial-screens</code>, branch <code>develop</code> at <code>f9b9735</code>.</li>
+      <li>Repo <code>rapsure777-a11y/xr-spatial-screens</code>, branch <code>develop</code> at <code>b533bcf</code>.</li>
       <li>Detail: <code>Docs/HEADSET_PAIRING_REPORT.md</code>, <code>Docs/HOST_CORE_REPORT.md</code>, <code>Docs/PAIRING_PLAN.md</code>, <code>Docs/SPEC_2026-10-10.md</code>.</li>
       <li>PC app: <code>Builds\HostApp\XrSpatialScreensHost.exe</code> (desktop shortcut "XR Spatial Screens Host"). Headset APK: <code>Builds/Headset/XrSpatialScreens.apk</code>.</li>
     </ul>
