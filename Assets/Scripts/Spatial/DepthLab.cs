@@ -20,6 +20,8 @@ namespace XrSpatial.Spatial
         public static float Pop = 0f;
         /// <summary>0 = depth follows the PC quickly, 1 = slow and ignores small changes (less warble, more lag).</summary>
         public static float Smoothing { get => XrSpatial.Capture.DepthProfiles.Smoothing; private set => XrSpatial.Capture.DepthProfiles.Smoothing = value; }
+        /// <summary>0 = off (depth as before), 1 = the PC keeps depth edges on the picture's edges: less halo around objects. Applied on the PC, so it costs a little PC time.</summary>
+        public static float EdgeSnap { get => XrSpatial.Capture.DepthProfiles.EdgeSnap; private set => XrSpatial.Capture.DepthProfiles.EdgeSnap = value; }
         /// <summary>Bumped on every change, so panels only push parameters when something changed.</summary>
         public static int Version { get; private set; }
 
@@ -35,6 +37,7 @@ namespace XrSpatial.Spatial
         public static void SetStrength(float s) { Strength = Mathf.Clamp01(s); Version++; }
         public static void SetFocus(float f) { Focus = Mathf.Clamp01(f); Version++; }
         public static void SetSmoothing(float s) { Smoothing = Mathf.Clamp01(s); }
+        public static void SetEdgeSnap(float e) { EdgeSnap = Mathf.Clamp01(e); }
         public static void SetPop(float p) { Pop = Mathf.Clamp01(p); Version++; }
 
         /// <summary>Relief (metres between depth 0 and depth 1) for a panel of the given width, capped so the farthest displacement stays within <see cref="MaxDisplacement"/>.</summary>

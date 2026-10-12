@@ -97,7 +97,7 @@ namespace XrSpatial.App
         void Build()
         {
             m_LabsEnabled = System.IO.File.Exists(System.IO.Path.Combine(Application.persistentDataPath, "depthlab.flag"));
-            if (m_LabsEnabled) H += 590f;
+            if (m_LabsEnabled) H += 690f;
             m_Font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             m_Canvas = gameObject.AddComponent<Canvas>();
             m_Canvas.renderMode = RenderMode.WorldSpace;
@@ -344,6 +344,10 @@ namespace XrSpatial.App
             m_Labs.Add(MakeSlider(new Vector2(Style.Margin, y - 66), new Vector2(full, 66), () => $"Smoothing  {Mathf.RoundToInt(DepthLab.Smoothing * 100f)}%", () => DepthLab.Smoothing, DepthLab.SetSmoothing));
             y -= 66 + 4;
             Note("Less warble, but depth reacts slower. 0% = quick and lively.", 28);
+            y -= 6;
+            m_Labs.Add(MakeSlider(new Vector2(Style.Margin, y - 66), new Vector2(full, 66), () => $"Edge snap  {Mathf.RoundToInt(DepthLab.EdgeSnap * 100f)}%", () => DepthLab.EdgeSnap, DepthLab.SetEdgeSnap));
+            y -= 66 + 4;
+            Note("Keeps depth edges on the picture's edges: less halo around objects. 0% = off.", 28);
             y -= 10;
             float half = (full - Style.ColGap) / 2f;
             m_Labs.Add(MakeBtn(new Vector2(Style.Margin, y - Style.ButtonH), new Vector2(half, Style.ButtonH), () => "Add depth test", () => OnAddDepthTest?.Invoke(), null));

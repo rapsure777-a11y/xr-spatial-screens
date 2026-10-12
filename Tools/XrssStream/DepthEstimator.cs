@@ -58,7 +58,7 @@ static class DepthEstimator
     }
 
     /// <summary>Per-stream smoothing state: the previous depth picture and a slowly moving value range, so the result does not flicker from frame to frame.</summary>
-    public sealed class Smoother { public float[] Prev; public int W, H; public float Min, Max; public bool Init; public byte[] Thumb; }
+    public sealed class Smoother { public float[] Prev; public int W, H; public float Min, Max; public bool Init; public byte[] Thumb; public volatile float Edge; }          // Edge: 0 = off (the original behaviour), up to 1 = strongest edge-aware smoothing (headset option)
 
     /// <summary>
     /// Depth for one BGRA frame as an 8-bit picture (255 = near) of at most 256 px wide, same aspect as the frame. Returns null on failure.
@@ -127,6 +127,7 @@ static class DepthEstimator
                 blur[y * ow + x] = sum / n;
             }
         cur = blur;
+        if (st.Edge > 0f) cur = EdgeSnap.Apply(cur, Guide(bgra, w, h, stride, ow, oh), ow, oh, st.Edge);        // optional: keep depth edges on the picture's edges
         // the value range is the 2nd to 98th percentile (a few stray pixels must not rescale the whole scene) and it moves slowly, so the scene does not breathe
         Range(cur, out float lo, out float hi);
         if (!st.Init || st.W != ow || st.H != oh) { st.Init = true; st.W = ow; st.H = oh; st.Min = lo; st.Max = hi; st.Prev = null; }
@@ -148,6 +149,21 @@ static class DepthEstimator
             outb[i] = (byte)Math.Round(d * 255f);
         }
         return outb;
+    }
+
+    /// <summary>The frame's brightness (0..1) at the depth picture's size, the guide of the edge-aware filter.</summary>
+    static unsafe float[] Guide(byte[] bgra, int w, int h, int stride, int ow, int oh)
+    {
+        var g = new float[ow * oh];
+        using var small = new SKBitmap(new SKImageInfo(ow, oh, SKColorType.Bgra8888, SKAlphaType.Opaque));
+        bool ok;
+        fixed (byte* sp = bgra)
+        using (var src = new SKPixmap(new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Opaque), (IntPtr)sp, stride))
+            ok = src.ScalePixels(small.PeekPixels(), new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
+        if (!ok) return null;
+        byte* p = (byte*)small.GetPixels();
+        for (int i = 0; i < g.Length; i++) g[i] = (p[i * 4] * 29 + p[i * 4 + 1] * 150 + p[i * 4 + 2] * 77) / 65280f;
+        return g;
     }
 
     /// <summary>Compares a coarse grid of the frame with the one depth was last made from; small changes (a blinking cursor, a clock) do not count.</summary>

@@ -324,6 +324,12 @@ sealed unsafe class Session
                     case 'L': { Fill(2); Find(BitConverter.ToUInt16(b, 0))?.Injector.Handle(InputInjector.Lost, 0, 0, 0); break; }
                     case 'S': { Fill(1); SetAudio(b[0] != 0); break; }
                     case 'C': { Fill(1); SetCursor(b[0] != 0); break; }
+                    case 'E':                                                                         // Depth Lab option: edge-aware smoothing level for a stream (0 = off)
+                        {
+                            Fill(3); var s = Find(BitConverter.ToUInt16(b, 0));
+                            if (s != null) { s.DepthSmooth.Edge = Math.Clamp((int)b[2], 0, 100) / 100f; s.DepthSmooth.Thumb = null; s.DepthCounter = 0; Console.WriteLine($"stream {s.Id}: depth edge snap {b[2]}%"); }
+                            break;
+                        }
                     case 'D':
                         {
                             Fill(3); var s = Find(BitConverter.ToUInt16(b, 0)); int fps = Math.Clamp((int)b[2], 0, 15);

@@ -10,6 +10,8 @@ namespace XrSpatial.Capture
     {
         /// <summary>0 = AI depth follows the PC quickly, 1 = slow and ignores small changes (set from DepthLab).</summary>
         public static float Smoothing = 0.4f;
+        /// <summary>0 = off (the original depth), up to 1 = the PC keeps depth edges on the picture's edges (edge-aware smoothing). Sent to the PC.</summary>
+        public static float EdgeSnap;
         public enum Profile { Off, Ai, Curved, Dome, Tilt }
 
         /// <summary>The shape applied to live window and monitor sources; Off leaves them flat even when Depth is on.</summary>

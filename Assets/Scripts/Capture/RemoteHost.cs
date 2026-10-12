@@ -369,6 +369,13 @@ namespace XrSpatial.Capture
             Write(m);
         }
 
+        /// <summary>Sets the edge-aware smoothing level (0 to 100) the PC applies to a stream's depth. 0 = off.</summary>
+        public static void RequestEdge(ushort id, int percent)
+        {
+            var m = new byte[4]; m[0] = (byte)'E'; BitConverter.GetBytes(id).CopyTo(m, 1); m[3] = (byte)Mathf.Clamp(percent, 0, 100);
+            Write(m);
+        }
+
         /// <summary>The newest depth picture of a stream if it is newer than <paramref name="seen"/>.</summary>
         public static bool TakeDepth(ushort id, ref int seen, out byte[] data, out int w, out int h)
         {

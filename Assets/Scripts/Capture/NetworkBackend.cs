@@ -37,6 +37,7 @@ namespace XrSpatial.Capture
         byte[] m_DepthTarget, m_DepthCur;
         int m_DepthW, m_DepthH, m_DepthSeen, m_DepthEpoch = -1;
         bool m_DepthAsked;
+        int m_EdgeSent = -1;                                    // the edge-aware smoothing level the PC was last told (-1 = not yet)
 
         public Texture2D Depth => m_DepthTex;
 
@@ -48,9 +49,12 @@ namespace XrSpatial.Capture
             {
                 m_DepthAsked = want; m_DepthEpoch = RemoteHost.ConnectionEpoch;
                 RemoteHost.RequestDepth(StreamId, want ? DepthRequestFps : 0);
+                m_EdgeSent = -1;
                 if (!want) DisposeDepth();
             }
             if (!want) return;
+            int edge = Mathf.RoundToInt(Mathf.Clamp01(DepthProfiles.EdgeSnap) * 100f);
+            if (edge != m_EdgeSent) { m_EdgeSent = edge; RemoteHost.RequestEdge(StreamId, edge); }
             if (RemoteHost.TakeDepth(StreamId, ref m_DepthSeen, out var data, out int w, out int h))
             {
                 if (m_DepthTex == null || m_DepthW != w || m_DepthH != h)
