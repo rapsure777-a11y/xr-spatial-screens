@@ -29,6 +29,7 @@ namespace XrSpatial.App
         const float W = 560f, Scale = 0.00055f;
         float H = 1225f;                                             // 0.31 m x 0.48 m (the old 820 high panel needed about 850 for its 19 buttons, the last one hung below it); taller when the Labs row is shown
         const int WindowsPerPage = 8;
+        const float MinHeight = 800f;
         Canvas m_Canvas;
         RectTransform m_Rect;
         Text m_Mode, m_Status;
@@ -107,7 +108,6 @@ namespace XrSpatial.App
             m_Mode = Txt("Mode", m_Rect, new Vector2(Style.Margin, H - 12 - 28), new Vector2(W - 2 * Style.Margin, 28), 24, TextAnchor.MiddleLeft, Style.Accent);
             m_Mode.fontStyle = FontStyle.Bold;
             m_Status = Txt("Status", m_Rect, new Vector2(Style.Margin, H - 12 - 28 - 66), new Vector2(W - 2 * Style.Margin, 66), 24, TextAnchor.UpperLeft, Style.Text);
-            Txt("Brand", m_Rect, new Vector2(Style.Margin, 6), new Vector2(W - 2 * Style.Margin, 24), 18, TextAnchor.MiddleCenter, Style.TextFaint).text = "SPATIAL CROP  ·  GAMEBREAK LABS";
 
             // Sections, top to bottom: what to show (source), how it sits (screen), which part (crop), how to use it (input), how it arrives (stream and sound), housekeeping (utility).
             float y = H - 12 - 28 - 66 - 4;
@@ -189,6 +189,18 @@ namespace XrSpatial.App
             Add(() => "Hide palette", () => SetVisible(false));
 
             if (m_LabsEnabled) { Section("LABS  ·  experimental"); Row(2); Add(() => DepthLab.Enabled ? "Depth Lab: ON" : "Depth Lab...", ShowLabs, () => DepthLab.Enabled); }
+
+            // trim the empty strip under the last row (the other pages need at most MinHeight; the Labs page needs its extra height)
+            Row(cols);
+            float excess = m_LabsEnabled ? 0f : Mathf.Min(y - 12f, H - MinHeight);
+            if (excess > 0f)
+            {
+                foreach (RectTransform c in m_Rect) c.anchoredPosition -= new Vector2(0, excess);
+                H -= excess;
+                m_Rect.sizeDelta = new Vector2(W, H);
+                var back = m_Rect.Find("Back") as RectTransform;
+                back.anchoredPosition = Vector2.zero; back.sizeDelta = new Vector2(W, H);
+            }
         }
 
         Btn MakeBtn(Vector2 pos, Vector2 size, Func<string> text, Action action, Func<bool> active, Func<string> detail = null, Func<bool> dim = null)
