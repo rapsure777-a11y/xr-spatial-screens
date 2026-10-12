@@ -12,6 +12,15 @@ namespace XrSpatial.Capture
         public static float Smoothing = 0.4f;
         /// <summary>0 = off (the original depth), up to 1 = the PC keeps depth edges on the picture's edges (edge-aware smoothing). Sent to the PC.</summary>
         public static float EdgeSnap;
+
+        /// <summary>How often the PC makes a depth map: 2, 5 (the default, as before), 10, 15 per second, or Auto (up to 5, slower when the picture is calm). Remembered between runs.</summary>
+        static readonly int[] s_RateHz = { 2, 5, 10, 15, 0 };
+        static int s_Rate = -1;
+        public static int RateIndex { get { if (s_Rate < 0) { try { s_Rate = Mathf.Clamp(PlayerPrefs.GetInt("xrss.depthRate", 1), 0, 4); } catch (System.Exception) { s_Rate = 1; } } return s_Rate; } }
+        public static string RateName => RateIndex == 4 ? "Auto" : s_RateHz[RateIndex] + " Hz";
+        /// <summary>What the 'D' request carries: maps per second, or 255 for Auto.</summary>
+        public static byte RateByte => RateIndex == 4 ? (byte)255 : (byte)s_RateHz[RateIndex];
+        public static void NextRate() { s_Rate = (RateIndex + 1) % 5; try { PlayerPrefs.SetInt("xrss.depthRate", s_Rate); PlayerPrefs.Save(); } catch (System.Exception) { } }
         public enum Profile { Off, Ai, Curved, Dome, Tilt }
 
         /// <summary>The shape applied to live window and monitor sources; Off leaves them flat even when Depth is on.</summary>

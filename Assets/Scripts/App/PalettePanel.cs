@@ -97,7 +97,7 @@ namespace XrSpatial.App
         void Build()
         {
             m_LabsEnabled = System.IO.File.Exists(System.IO.Path.Combine(Application.persistentDataPath, "depthlab.flag"));
-            if (m_LabsEnabled) H += 770f;
+            if (m_LabsEnabled) H += 890f;
             m_Font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             m_Canvas = gameObject.AddComponent<Canvas>();
             m_Canvas.renderMode = RenderMode.WorldSpace;
@@ -360,6 +360,14 @@ namespace XrSpatial.App
             y -= Style.ButtonH + 6;
             m_Labs.Add(MakeBtn(new Vector2(Style.Margin, y - Style.ButtonH), new Vector2(full, Style.ButtonH), () => RemoteHost.DepthModelMask == 0 ? "Depth model: (turn depth on first)" : "Depth model: " + RemoteHost.DepthModelName(RemoteHost.DepthModelHost), RemoteHost.CycleDepthModel, () => RemoteHost.DepthModelHost == 3));
             y -= Style.ButtonH + 6;
+            m_Labs.Add(MakeBtn(new Vector2(Style.Margin, y - Style.ButtonH), new Vector2(full, Style.ButtonH), () => "Depth rate: " + DepthProfiles.RateName, DepthProfiles.NextRate, () => DepthProfiles.RateIndex != 1));
+            y -= Style.ButtonH + 6;
+            {
+                var dr = Txt("DepthReadout", m_Rect, new Vector2(Style.Margin + 2, y - 52), new Vector2(full - 4, 52), 20, TextAnchor.UpperLeft, Style.TextDim);
+                m_LabsDecor.Add(dr.gameObject);
+                m_LabsLive.Add((dr, () => RemoteHost.DepthRate10 == 0 && RemoteHost.DepthMaxMs == 0 ? "Depth maps: none in the last 5 s (picture unchanged, or depth off)" : $"Depth maps: {RemoteHost.DepthRate10 / 10f:0.0} per second, {RemoteHost.DepthAvgMs} ms average, {RemoteHost.DepthMaxMs} ms slowest"));
+                y -= 52 + 6;
+            }
             m_Labs.Add(MakeBtn(new Vector2(Style.Margin, y - Style.ButtonH), new Vector2(full, Style.ButtonH), () => StreamQuality.ForcedWidth > 0 ? $"Stream width test: {StreamQuality.ForcedWidth}" : "Stream width test: auto", StreamQuality.NextForcedWidth, () => StreamQuality.ForcedWidth > 0));
             y -= Style.ButtonH + 6;
             m_Labs.Add(MakeBtn(new Vector2(Style.Margin, y - Style.ButtonH), new Vector2(full, Style.ButtonH), () => "Sharper downscale: " + ScreenSource.MipBiasName, ScreenSource.NextMipBias, () => ScreenSource.MipBias != 0f));
