@@ -97,7 +97,7 @@ namespace XrSpatial.App
         void Build()
         {
             m_LabsEnabled = System.IO.File.Exists(System.IO.Path.Combine(Application.persistentDataPath, "depthlab.flag"));
-            if (m_LabsEnabled) H += 890f;
+            if (m_LabsEnabled) H += 960f;
             m_Font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             m_Canvas = gameObject.AddComponent<Canvas>();
             m_Canvas.renderMode = RenderMode.WorldSpace;
@@ -359,6 +359,8 @@ namespace XrSpatial.App
             m_Labs.Add(MakeBtn(new Vector2(Style.Margin, y - Style.ButtonH), new Vector2(full, Style.ButtonH), () => "Real windows: " + DepthProfiles.Name(DepthProfiles.Live), DepthProfiles.Next, () => DepthProfiles.Live != DepthProfiles.Profile.Off));
             y -= Style.ButtonH + 6;
             m_Labs.Add(MakeBtn(new Vector2(Style.Margin, y - Style.ButtonH), new Vector2(full, Style.ButtonH), () => RemoteHost.DepthModelMask == 0 ? "Depth model: (turn depth on first)" : "Depth model: " + RemoteHost.DepthModelName(RemoteHost.DepthModelHost), RemoteHost.CycleDepthModel, () => RemoteHost.DepthModelHost == 3));
+            y -= Style.ButtonH + 6;
+            m_Labs.Add(MakeBtn(new Vector2(Style.Margin, y - Style.ButtonH), new Vector2(full, Style.ButtonH), () => DepthLab.ViewAware ? "Depth for: screens you see" : "Depth for: all screens", DepthLab.ToggleViewAware, () => DepthLab.ViewAware));
             y -= Style.ButtonH + 6;
             m_Labs.Add(MakeBtn(new Vector2(Style.Margin, y - Style.ButtonH), new Vector2(full, Style.ButtonH), () => "Depth rate: " + DepthProfiles.RateName, DepthProfiles.NextRate, () => DepthProfiles.RateIndex != 1));
             y -= Style.ButtonH + 6;

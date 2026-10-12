@@ -26,6 +26,23 @@ namespace XrSpatial.Capture
         public string Status => Backend != null ? Backend.Status : "not started";
         /// <summary>The depth map of this source (Depth Lab), or null when the backend has none. Never touched while depth is off.</summary>
         bool IsSynthetic => Def.kind == "pattern" || Def.kind == "depthtest" || Def.kind == "sbstest";                    // generated locally: never "closed", nothing to reconnect
+        // Depth Lab: how visible the panels showing this source are (2 looked at, 1 in view, 0 not seen), voted by the panels every frame
+        int m_VoteTier, m_VoteFrame = -10; float m_SeenAt = -100f;
+        public void VoteDepthTier(int tier)
+        {
+            if (m_VoteFrame != Time.frameCount) { m_VoteFrame = Time.frameCount; m_VoteTier = tier; } else m_VoteTier = Mathf.Max(m_VoteTier, tier);
+            if (tier >= 1) m_SeenAt = Time.unscaledTime;
+        }
+        /// <summary>The best vote of this frame (or the last), kept at 1 for 3 seconds after the screen leaves view so a quick glance away does not stop its depth.</summary>
+        public int DepthTier
+        {
+            get
+            {
+                if (Time.frameCount - m_VoteFrame > 1) return 0;
+                return m_VoteTier == 0 && Time.unscaledTime - m_SeenAt < 3f ? 1 : m_VoteTier;
+            }
+        }
+
         public Texture2D DepthMap => (Backend as IDepthProvider)?.Depth ?? (IsSynthetic ? null : DepthProfiles.LiveTexture);
 
         readonly Func<CaptureRequest> m_Request;
@@ -75,7 +92,7 @@ namespace XrSpatial.Capture
                 if (!IsSynthetic && Time.realtimeSinceStartup > m_RetryAt) { m_RetryAt = Time.realtimeSinceStartup + 2f; Restart(); }
                 return;
             }
-            (Backend as NetworkBackend)?.TickDepth(Time.unscaledDeltaTime);                       // Depth Lab: does nothing unless AI depth is selected
+            (Backend as NetworkBackend)?.TickDepth(Time.unscaledDeltaTime, DepthTier);                       // Depth Lab: does nothing unless AI depth is selected
             if (Backend.PollInto(ref m_Raw) && m_Raw)
             {
                 EnsureView(m_Raw.width, m_Raw.height);

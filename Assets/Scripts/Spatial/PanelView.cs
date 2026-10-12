@@ -136,6 +136,21 @@ namespace XrSpatial.Spatial
         /// <summary>True while this panel is drawn by the depth renderer instead of the flat one.</summary>
         public bool DepthActive => m_DepthActive;
 
+        /// <summary>Tells the source how visible this panel is, so depth is made only for screens you can see (see <see cref="DepthLab.ViewAware"/>).</summary>
+        void VoteDepthTier()
+        {
+            if (Source == null || !DepthLab.Enabled || !Def.visible) return;
+            var cam = Camera.main;
+            int tier = 2;
+            if (DepthLab.ViewAware && cam)
+            {
+                var q = Def.corners; var w = new Vector3[4];
+                for (int i = 0; i < 4; i++) w[i] = transform.TransformPoint(q[i]);
+                tier = DepthLab.ViewTier(cam.transform.position, cam.transform.forward, w);
+            }
+            Source.VoteDepthTier(tier);
+        }
+
         void UpdateDepth()
         {
             bool want = DepthLab.Enabled && !StereoMath.IsStereo(Def.stereo) && Source != null && Def.visible && Source.DepthMap != null;
@@ -219,6 +234,7 @@ namespace XrSpatial.Spatial
             if (closed) UpdateClosedLabel();
             else if (m_ClosedLabel) m_ClosedLabel.gameObject.SetActive(false);
             if (m_AppliedStereo != Def.stereo || m_AppliedSwap != Def.swapEyes || m_AppliedOffset != Def.stereoOffset) ApplyStereo();
+            VoteDepthTier();
             UpdateDepth();
             if (Cursor != null || RemoteHost.PcCursor != PcCursorMode.Off) UpdateCursor();
         }
