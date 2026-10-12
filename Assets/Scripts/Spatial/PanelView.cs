@@ -129,6 +129,7 @@ namespace XrSpatial.Spatial
         Mesh m_DepthMesh;
         Material m_DepthMaterial;
         bool m_DepthActive, m_DepthWarned;
+        int m_DepthColumns;                                           // the grid the current depth mesh was built with (finer while Edge snap is on)
         readonly Vector3[] m_DepthCorners = new Vector3[4];
         static readonly int DepthTex = Shader.PropertyToID("_DepthTex"), DepthParams = Shader.PropertyToID("_DepthParams"), PanelNormal = Shader.PropertyToID("_PanelNormal");
 
@@ -143,7 +144,8 @@ namespace XrSpatial.Spatial
             var q = Def.corners;
             bool moved = false;
             for (int i = 0; i < 4; i++) if (m_DepthCorners[i] != q[i]) { moved = true; m_DepthCorners[i] = q[i]; }
-            if (moved) { if (m_DepthMesh) Destroy(m_DepthMesh); m_DepthMesh = DepthLab.BuildGrid(q); m_Filter.sharedMesh = m_DepthMesh; }
+            int cols = DepthLab.Columns;
+            if (moved || cols != m_DepthColumns) { if (m_DepthMesh) Destroy(m_DepthMesh); m_DepthMesh = DepthLab.BuildGrid(q, cols); m_DepthColumns = cols; m_Filter.sharedMesh = m_DepthMesh; }
             var m = m_DepthMaterial;
             // mirror the flat material's per-panel settings (source texture, crop, tint, edge highlight) so everything that drives the flat panel drives this one too
             m.SetTexture(MainTex, m_Material.GetTexture(MainTex));
@@ -165,7 +167,8 @@ namespace XrSpatial.Spatial
             if (!m_DepthMaterial) m_DepthMaterial = new Material(shader) { name = "PanelDepth-" + Def.id };
             var q = Def.corners;
             for (int i = 0; i < 4; i++) m_DepthCorners[i] = q[i];
-            m_DepthMesh = DepthLab.BuildGrid(q);
+            m_DepthColumns = DepthLab.Columns;
+            m_DepthMesh = DepthLab.BuildGrid(q, m_DepthColumns);
             m_Filter.sharedMesh = m_DepthMesh;
             m_Renderer.sharedMaterial = m_DepthMaterial;
             m_DepthActive = true;

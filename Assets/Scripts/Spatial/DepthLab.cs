@@ -28,6 +28,8 @@ namespace XrSpatial.Spatial
         public const float MaxDisplacement = 0.35f;                        // metres: nothing ever moves further than this from the panel plane
         public const float ReliefPerWidth = 0.30f;                         // strength 1 = depth 0 to depth 1 differ by 30% of the panel width (before the clamp)
         public const int GridColumns = 128;
+        public const int FineGridColumns = 200;                            // the grid cap: used while Edge snap is on, so sharpened depth edges are not smeared over a coarse cell
+        public static int Columns => EdgeSnap > 0.01f ? FineGridColumns : GridColumns;
 
         public static void Set(bool enabled, float strength, float focus)
         {
