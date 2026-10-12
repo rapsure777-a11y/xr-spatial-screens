@@ -15,7 +15,7 @@ static class DepthEstimator
     const int Size = 518;                                           // the model's input edge (a multiple of 14)
     static InferenceSession s_Session;
     static string s_InputName;
-    static bool s_Tried, s_V3;                                       // s_V3: Depth Anything 3 small (switched on by the file modelsSe_v3.flag), else Depth Anything V2 small
+    static bool s_Tried, s_V3, s_Base;                                       // s_V3: Depth Anything 3 small (switched on by the file modelsSe_v3.flag), else Depth Anything V2 small
     static readonly object s_Lock = new object();
     static float[] s_Input = new float[3 * Size * Size];
 
@@ -25,6 +25,10 @@ static class DepthEstimator
     static string FindModel()
     {
         string baseDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XrSpatialScreens", "models");
+        // Depth Anything 3 Base (Apache-2.0): models\use_base.flag + models\da3base\model.onnx (or model_fp16.onnx with models\base_fp16.flag). Fixed 504 x 504 input named 'image', output 'depth'.
+        string baseFile = Path.Combine(baseDir, "da3base", File.Exists(Path.Combine(baseDir, "base_fp16.flag")) ? "model_fp16.onnx" : "model.onnx");
+        s_Base = File.Exists(Path.Combine(baseDir, "use_base.flag")) && File.Exists(baseFile);
+        if (s_Base) { s_V3 = false; return baseFile; }
         string v3 = Path.Combine(baseDir, "da3", "model.onnx");
         s_V3 = File.Exists(Path.Combine(baseDir, "use_v3.flag")) && File.Exists(v3);
         if (s_V3) return v3;
@@ -51,7 +55,7 @@ static class DepthEstimator
                 try { so.AppendExecutionProvider_DML(0); } catch (Exception e) { Console.WriteLine("depth: DirectML unavailable (" + e.Message + "), using the CPU"); }
                 s_Session = new InferenceSession(path, so);
                 foreach (var k in s_Session.InputMetadata.Keys) { s_InputName = k; break; }
-                Console.WriteLine("depth: model loaded from " + path + (s_V3 ? " (Depth Anything 3)" : " (Depth Anything V2)"));
+                Console.WriteLine("depth: model loaded from " + path + (s_Base ? " (Depth Anything 3 Base)" : s_V3 ? " (Depth Anything 3)" : " (Depth Anything V2)"));
             }
             catch (Exception e) { Problem = "depth model failed to load: " + e.Message; Console.WriteLine("depth: " + Problem); s_Session = null; }
         }
@@ -72,6 +76,7 @@ static class DepthEstimator
         float[] raw = null;
         int gw, gh;                                                  // the grid the model works on
         if (s_V3) { int le = 504; gw = w >= h ? le / 14 * 14 : Math.Max(14, (int)Math.Round((double)w * le / h / 14) * 14); gh = w >= h ? Math.Max(14, (int)Math.Round((double)h * le / w / 14) * 14) : le / 14 * 14; }
+        else if (s_Base) { gw = gh = 504; }                          // the Base export is fixed at 504 x 504 (the frame is squashed into it, undone by the straight resample below)
         else { gw = gh = Size; }                                     // V2 takes a square (the frame is squashed into it; the straight resample below undoes that)
         lock (s_Lock)
         {
@@ -94,9 +99,9 @@ static class DepthEstimator
             }
             var tensor = new DenseTensor<float>(input.AsMemory(0, 3 * plane), s_V3 ? new[] { 1, 1, 3, gh, gw } : new[] { 1, 3, gh, gw });
             using var results = s_Session.Run(new[] { NamedOnnxValue.CreateFromTensor(s_InputName, tensor) });
-            foreach (var r in results) { if (s_V3 && r.Name != "predicted_depth") continue; raw = System.Linq.Enumerable.ToArray(r.AsEnumerable<float>()); break; }
+            foreach (var r in results) { if ((s_V3 && r.Name != "predicted_depth") || (s_Base && r.Name != "depth")) continue; raw = System.Linq.Enumerable.ToArray(r.AsEnumerable<float>()); break; }
             if (raw == null || raw.Length < plane) return null;
-            if (s_V3) for (int i = 0; i < plane; i++) raw[i] = 1f / Math.Max(raw[i], 1e-3f);          // V3 gives depth (far is large); the panel wants near = large
+            if (s_V3 || s_Base) for (int i = 0; i < plane; i++) raw[i] = 1f / Math.Max(raw[i], 1e-3f);          // V3 gives depth (far is large); the panel wants near = large
         }
         // resample to the output size, bilinear
         var cur = new float[ow * oh];
