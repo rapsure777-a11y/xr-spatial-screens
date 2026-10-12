@@ -96,14 +96,8 @@ namespace XrssHostApp
         {
             string adb = FindAdb();
             if (adb == null) return new LaunchResult { Message = "Can't find the Android tools (adb.exe). Put adb.exe next to this app." };
-            string target = null;
-            foreach (string ip in Candidates())
-            {
-                var c = Run(adb, "connect " + ip + ":" + AdbPort, 6000);
-                string o = c.output ?? "";
-                if (c.code == 0 && (o.Contains("connected to") || o.Contains("already connected"))) { target = ip + ":" + AdbPort; break; }
-            }
-            if (target == null) return new LaunchResult { Message = "Couldn't reach the headset. Make sure it is on and in range (and that developer mode is still on), then try again." };
+            string target = Connect(adb);
+            if (target == null) return Unreachable;
 
             if (IsRunning(adb, target)) return new LaunchResult { Ok = true, Message = "The headset app is already running." };
             var s = Run(adb, "-s " + target + " shell am start -n " + Package + "/" + Activity, 10000);
@@ -114,6 +108,58 @@ namespace XrssHostApp
                 if (IsRunning(adb, target)) return new LaunchResult { Ok = true, Message = "Started the app on the headset." };
             }
             return new LaunchResult { Message = "The headset was told to start the app, but it isn't running yet. Check the headset, then try again." };
+        }
+
+        static readonly LaunchResult Unreachable = new LaunchResult { Message = "Couldn't reach the headset. Make sure it is on and in range (and that developer mode is still on), then try again." };
+
+        /// <summary>The first candidate address adb can connect to ("ip:port"), or null.</summary>
+        string Connect(string adb)
+        {
+            foreach (string ip in Candidates())
+            {
+                var c = Run(adb, "connect " + ip + ":" + AdbPort, 6000);
+                string o = c.output ?? "";
+                if (c.code == 0 && (o.Contains("connected to") || o.Contains("already connected"))) return ip + ":" + AdbPort;
+            }
+            return null;
+        }
+
+        /// <summary>The headset app package (APK): next to this app, then the repository's headset build folder. Null if there is none.</summary>
+        public string FindApk()
+        {
+            var list = new List<string> { Path.Combine(m_AppDir ?? "", "XrSpatialScreens.apk") };
+            try { if (!string.IsNullOrEmpty(m_AppDir)) list.Add(Path.GetFullPath(Path.Combine(m_AppDir, "..", "Headset", "XrSpatialScreens.apk"))); } catch (Exception) { }
+            return list.FirstOrDefault(File.Exists);
+        }
+
+        /// <summary>Installs (or updates, keeping the app's saved data) the headset app from the APK that ships with this app, then starts it.</summary>
+        public Task<LaunchResult> InstallAsync()
+        {
+            if (System.Threading.Interlocked.CompareExchange(ref m_Busy, 1, 0) != 0) return Task.FromResult(new LaunchResult { Ok = false, Message = "Already working on the headset..." });
+            return Task.Run(() => { try { return Install(); } finally { System.Threading.Volatile.Write(ref m_Busy, 0); } });
+        }
+
+        public LaunchResult Install()
+        {
+            string adb = FindAdb();
+            if (adb == null) return new LaunchResult { Message = "Can't find the Android tools (adb.exe). Put adb.exe next to this app." };
+            string apk = FindApk();
+            if (apk == null) return new LaunchResult { Message = "The headset app package (XrSpatialScreens.apk) isn't next to this app, so there is nothing to install." };
+            string target = Connect(adb);
+            if (target == null) return Unreachable;
+            var i = Run(adb, "-s " + target + " install -r \"" + apk + "\"", 180000);          // -r keeps the app's saved layouts and pairing
+            string o = i.output ?? "";
+            if (i.code != 0 || !o.Contains("Success")) return new LaunchResult { Message = "The headset didn't accept the install: " + FailureLine(o) };
+            var s = Run(adb, "-s " + target + " shell am start -n " + Package + "/" + Activity, 10000);
+            if (s.code != 0 || (s.output ?? "").Contains("Error")) return new LaunchResult { Ok = true, Message = "Installed the app on the headset, but it didn't start: " + FirstLine(s.output) };
+            return new LaunchResult { Ok = true, Message = "Installed the latest app on the headset and started it." };
+        }
+
+        /// <summary>The line that explains an adb install failure (adb prints the reason after "Failure" or "Error").</summary>
+        static string FailureLine(string o)
+        {
+            var l = (o ?? "").Split('\n').Select(x => x.Trim()).FirstOrDefault(x => x.Contains("Failure") || x.Contains("Error") || x.Contains("error"));
+            return l ?? FirstLine(o);
         }
 
         bool IsRunning(string adb, string target)

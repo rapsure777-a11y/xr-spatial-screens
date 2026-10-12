@@ -33,11 +33,12 @@ namespace XrssHostApp
             open.Click += (s, e) => m_Form.ShowAndActivate();
             var pair = new ToolStripMenuItem("Pair Headset"); pair.Click += (s, e) => { m_Form.ShowAndActivate(); m_C.PairHeadset(); };
             var launch = new ToolStripMenuItem("Launch on Headset"); launch.Click += (s, e) => m_C.LaunchHeadset();
+            var install = new ToolStripMenuItem("Install / Update on Headset"); install.Click += (s, e) => m_C.InstallOnHeadset();
             var devices = new ToolStripMenuItem("Paired Devices"); devices.Click += (s, e) => m_Form.FocusDevices();
             m_StartStop = new ToolStripMenuItem("Stop Host"); m_StartStop.Click += (s, e) => { if (m_C.IsRunning) m_C.StopHost(); else m_C.StartHost(); };
             m_AutoItem = new ToolStripMenuItem("Start with Windows") { CheckOnClick = false }; m_AutoItem.Click += (s, e) => SetAutostart(!m_Auto.IsEnabled);
             var exit = new ToolStripMenuItem("Exit"); exit.Click += (s, e) => ExitApp();
-            menu.Items.AddRange(new ToolStripItem[] { open, pair, launch, devices, new ToolStripSeparator(), m_StartStop, m_AutoItem, new ToolStripSeparator(), exit });
+            menu.Items.AddRange(new ToolStripItem[] { open, pair, launch, install, devices, new ToolStripSeparator(), m_StartStop, m_AutoItem, new ToolStripSeparator(), exit });
             menu.Opening += (s, e) => { m_StartStop.Text = m_C.IsRunning ? "Stop Host" : "Start Host"; m_AutoItem.Checked = m_Auto.IsEnabled; };
 
             m_Tray = new NotifyIcon { ContextMenuStrip = menu, Visible = true, Text = "XR Spatial Screens Host" };

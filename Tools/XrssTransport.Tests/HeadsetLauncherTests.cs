@@ -101,4 +101,42 @@ public class HeadsetLauncherTests : IDisposable
         var r = l.Launch();
         Assert.False(r.Ok); Assert.Contains("Error: Activity class does not exist", r.Message);
     }
+
+    [Fact]
+    public void Install_without_an_apk_says_there_is_nothing_to_install()
+    {
+        var l = Make((a, m) => (0, "connected to x"));
+        var r = l.Install();
+        Assert.False(r.Ok); Assert.Contains("XrSpatialScreens.apk", r.Message);
+        Assert.DoesNotContain(m_Calls, c => c.Contains("install"));
+    }
+
+    [Fact]
+    public void Install_installs_with_replace_then_starts_the_app()
+    {
+        File.WriteAllText(Path.Combine(m_App, "XrSpatialScreens.apk"), "apk");
+        var l = Make((a, m) => a.StartsWith("connect ") ? (0, "connected to x") : a.Contains(" install ") ? (0, "Performing Streamed Install\r\nSuccess") : a.Contains("am start") ? (0, "Starting: Intent") : (1, "no"));
+        var r = l.Install();
+        Assert.True(r.Ok, r.Message); Assert.Contains("Installed", r.Message);
+        Assert.Contains(m_Calls, c => c.Contains(" install -r ") && c.Contains("XrSpatialScreens.apk"));
+        Assert.True(m_Calls.FindIndex(c => c.Contains(" install ")) < m_Calls.FindIndex(c => c.Contains("am start")));      // started only after it installed
+    }
+
+    [Fact]
+    public void A_refused_install_reports_the_reason_and_does_not_start_anything()
+    {
+        File.WriteAllText(Path.Combine(m_App, "XrSpatialScreens.apk"), "apk");
+        var l = Make((a, m) => a.StartsWith("connect ") ? (0, "connected to x") : (1, "Performing Streamed Install\r\nadb: failed to install x.apk: Failure [INSTALL_FAILED_INSUFFICIENT_STORAGE]"));
+        var r = l.Install();
+        Assert.False(r.Ok); Assert.Contains("INSTALL_FAILED_INSUFFICIENT_STORAGE", r.Message);
+        Assert.DoesNotContain(m_Calls, c => c.Contains("am start"));
+    }
+
+    [Fact]
+    public void Install_on_an_unreachable_headset_says_so()
+    {
+        File.WriteAllText(Path.Combine(m_App, "XrSpatialScreens.apk"), "apk");
+        var r = Make((a, m) => (0, "failed to connect")).Install();
+        Assert.False(r.Ok); Assert.Contains("Couldn't reach the headset", r.Message);
+    }
 }

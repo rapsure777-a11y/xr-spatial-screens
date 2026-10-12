@@ -71,14 +71,19 @@ namespace XrssHostApp
         string m_LaunchStatus; bool m_Launching;
 
         /// <summary>The "Launch on Headset" button: runs in the background, reports through the status and a balloon.</summary>
-        public void LaunchHeadset()
+        public void LaunchHeadset() => RunHeadsetJob(false);
+
+        /// <summary>The "Install / Update on Headset" button: installs the APK that ships with the app, then starts it.</summary>
+        public void InstallOnHeadset() => RunHeadsetJob(true);
+
+        void RunHeadsetJob(bool install)
         {
             var l = Launcher; if (l == null || m_Launching) return;
-            m_Launching = true; m_LaunchStatus = "Starting the app on the headset..."; Changed?.Invoke();
-            l.LaunchAsync().ContinueWith(t =>
+            m_Launching = true; m_LaunchStatus = install ? "Installing the app on the headset (this takes a moment)..." : "Starting the app on the headset..."; Changed?.Invoke();
+            (install ? l.InstallAsync() : l.LaunchAsync()).ContinueWith(t =>
             {
-                string msg = t.IsFaulted ? "Could not start the headset app: " + t.Exception.GetBaseException().Message : t.Result.Message;
-                m_Log.Info("launch on headset: " + msg);
+                string msg = t.IsFaulted ? "Could not " + (install ? "install" : "start") + " the headset app: " + t.Exception.GetBaseException().Message : t.Result.Message;
+                m_Log.Info((install ? "install on headset: " : "launch on headset: ") + msg);
                 m_LaunchStatus = msg; m_Launching = false;
                 Toast?.Invoke(msg); Changed?.Invoke();
             });
