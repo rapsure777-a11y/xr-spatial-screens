@@ -56,6 +56,9 @@ namespace XrssHostApp
 
         public void Show() => m_Form.ShowAndActivate();
 
+        /// <summary>Show the window from any thread (a second launch of the app asks for this). Works while the window has never been shown, because its handle exists from the start.</summary>
+        public void RequestShow() { try { if (m_Form.IsHandleCreated) m_Form.BeginInvoke(new Action(Show)); } catch (Exception) { } }
+
         void UpdateTray()
         {
             var st = m_C.Snapshot();

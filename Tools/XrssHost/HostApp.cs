@@ -61,7 +61,7 @@ namespace XrssHostApp
 
                 using (var app = new TrayApp(controller, auto, exe, version, showWindow: !background))
                 {
-                    single.ShowRequested += () => { try { var f = Application.OpenForms.Cast<Form>().FirstOrDefault(); f?.BeginInvoke(new Action(app.Show)); } catch (Exception) { } };
+                    single.ShowRequested += app.RequestShow;
                     Application.Run(app);
                 }
                 controller.Dispose();
