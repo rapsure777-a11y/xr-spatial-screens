@@ -41,7 +41,7 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--chip); pad
   </header>
 
   <section>
-    <p>Since the 7 Oct report the work moved from proofs to a usable product: a one-click Windows tray app, secure pairing with the Steam Frame, automatic reconnect, and a headset app with placement, tilt, controller outlines, PC cursor, sound, keyboard and side-by-side 3D. The user tested each on the real Frame. <code>develop</code> holds all of it (<code>b533bcf</code>, pushed).</p>
+    <p>Since the 7 Oct report the work moved from proofs to a usable product: a one-click Windows tray app, secure pairing with the Steam Frame, automatic reconnect, and a headset app with placement, tilt, controller outlines, PC cursor, sound, keyboard and side-by-side 3D. The user tested each on the real Frame. <code>develop</code> holds all of it (<code>3235997</code>, pushed).</p>
     <div class="strip">
       <div class="gate"><b>Pairing</b><span class="pill pass">Verified on Frame</span><span>Six-digit code confirmed on both sides; reconnect with no code.</span></div>
       <div class="gate"><b>PC host app</b><span class="pill pass">Hand-tested</span><span>Tray app, desktop shortcut, window list, 102 automated tests pass.</span></div>
@@ -64,6 +64,7 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--chip); pad
       <tr><td>Better AI depth (Depth Lab)</td><td>Works, modest gain</td><td>Depth Anything 3 Base added (Apache-2.0): on a test scene it found real panel shapes where the small model gave soft blobs, at 49 ms per map against 104 ms. User: "somewhat better". An in-app switch cycles the installed models.</td></tr>
       <tr><td>Edge-aware depth smoothing</td><td>Built, little visible effect</td><td>Optional slider, off by default; the PC filter works (tested) but the user saw almost no difference, even with a finer mesh. Treated as a small gain.</td></tr>
       <tr><td>Launch on Headset (PC app)</td><td>Works</td><td>Button in the host window and tray menu starts the headset app over adb (remembers the headset's addresses, falls back to the dongle address). Real start verified by the user; 7 tests with a fake adb.</td></tr>
+      <tr><td>Install / Update on Headset (PC app)</td><td>Works</td><td>Installs the headset package bundled with the PC app and starts it. Verified on the Frame by the user. 11 launcher tests. Intended for developers and testers (see distribution research).</td></tr>
       <tr><td>PC sound</td><td>Works</td><td>Audio streams (about 99 packets per interval); a silent test was a silent clip.</td></tr>
     </table></div>
   </section>
@@ -94,10 +95,24 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--chip); pad
     <ul>
       <li><b>Promote <code>develop</code> to <code>main</code>?</b> Frame tests have passed. Recommended yes.</li>
       <li><b>Model licenses:</b> the bigger Depth Anything V2 models (Base, Large) are non-commercial, so they were not used. Depth Anything 3 Small and Base are Apache-2.0. Large and Giant are non-commercial. Stay on the Apache models for any product.</li>
-      <li><b>How the headset app reaches customers.</b> The app is a developer build that is not in the Frame's menu, and today it is installed and started from the PC over adb. The proposal is for the PC app to be the companion that installs, updates and launches it (an Install or Update button is next). This depends on the customer's Frame allowing developer mode and network adb, and on adb's redistribution terms. Valve's own distribution route for third-party apps has not been checked yet and would replace this if it exists.</li>
+      <li><b>How the headset app reaches customers: ship it through Steam as an Android package.</b> Researched 12 Oct, see the section below. This removes the need for customers to use developer mode or adb. Decision needed: go this route, and who owns the Steamworks setup.</li>
       <li><b>Keystore hardening</b> for the device secret before any wider release.</li>
       <li><b>Distribution:</b> installer for the PC app (currently a 155 MB single-file exe plus helper) and how headset builds reach users. Neither exists yet.</li>
     </ul>
+  </section>
+
+  <section>
+    <h2>Distribution research: how the headset app reaches customers</h2>
+    <p>The headset app is a developer build that we install and start from the PC over adb. That cannot be the customer path. Valve's documentation shows an official one.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Question</th><th>Finding</th><th>Source</th></tr>
+      <tr><td>Can Android packages ship on Steam for the Frame?</td><td>Yes. An Android depot with a top-level .apk as the launch option; Steam installs and launches it through Lepton, Valve's Android layer. Steamworks SDK 1.63 and later ship Android ARM64 libraries.</td><td><a href="https://partner.steamgames.com/doc/steamhardware/steamframe/apk_upload">Valve: upload Android APKs</a>, <a href="https://partner.steamgames.com/doc/steamhardware/steamframe">Steam Frame overview</a></td></tr>
+      <tr><td>Is a review required to ship?</td><td>No. Valve's compatibility review only sets a badge (Verified, Playable, Unsupported, Unknown). Its results do not change whether the game is available to customers.</td><td><a href="https://partner.steamgames.com/doc/steamhardware/steamframe/compat">Valve: standalone compatibility review</a></td></tr>
+      <tr><td>What does Verified ask of a VR app?</td><td>At least 72 fps at 1728 x 1728 in normal play (under 1440 x 1440 is Unsupported); controllers drawn as the Frame's controllers; a default controller setup that reaches everything; no launcher to navigate. Our headset app held 144 fps in the pairing test, and already draws the Frame controller outline.</td><td>same page</td></tr>
+      <tr><td>What do developers use today?</td><td>Developer Mode on the Frame, adb over the network with Lepton Development running. Community sideloaders (FrameDrop, Frameloader) install packages for enthusiasts. These are not an official consumer route.</td><td><a href="https://partner.steamgames.com/doc/steamframe/debugging">Valve: debugging</a>, <a href="https://steamdeckhq.com/news/framedrop-sideloader-announced/">FrameDrop</a></td></tr>
+    </table></div>
+    <p><b>Recommendation.</b> Ship the headset app as an Android package through Steam. Customers then install it from their Steam library and open it from the headset like any other app, so developer mode, adb and adb's redistribution terms are not needed. Keep the PC app's Launch and Install buttons as developer and tester tools.</p>
+    <p><b>Not yet checked:</b> how the Windows companion should be distributed alongside a Steam Android app (a separate download or a second depot); Valve's rules for an app that is mainly a PC streaming client; and whether the headset's passthrough request, which this app makes and the Steamworks pages did not cover, is acceptable for store apps. These were not covered by the pages read. The pages were read on 12 Oct 2026; Valve may change them.</p>
   </section>
 
   <section>
@@ -112,7 +127,7 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--chip); pad
   <section>
     <h2>Where things are</h2>
     <ul>
-      <li>Repo <code>rapsure777-a11y/xr-spatial-screens</code>, branch <code>develop</code> at <code>b533bcf</code>.</li>
+      <li>Repo <code>rapsure777-a11y/xr-spatial-screens</code>, branch <code>develop</code> at <code>3235997</code>.</li>
       <li>Detail: <code>Docs/HEADSET_PAIRING_REPORT.md</code>, <code>Docs/HOST_CORE_REPORT.md</code>, <code>Docs/PAIRING_PLAN.md</code>, <code>Docs/SPEC_2026-10-10.md</code>.</li>
       <li>PC app: <code>Builds\HostApp\XrSpatialScreensHost.exe</code> (desktop shortcut "XR Spatial Screens Host"). Headset APK: <code>Builds/Headset/XrSpatialScreens.apk</code>.</li>
     </ul>
