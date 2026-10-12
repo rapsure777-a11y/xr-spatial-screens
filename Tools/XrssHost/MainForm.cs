@@ -99,7 +99,7 @@ namespace XrssHostApp
             m_Install = Theme.Button("Install / Update on Headset", false, 250); m_Install.Height = 46; m_Install.Click += (s, e) => m_C.InstallOnHeadset();
             row.Controls.Add(m_Pair); row.Controls.Add(m_StartStop); row.Controls.Add(m_Launch); row.Controls.Add(m_Install);
             Add(row, false);
-            m_LaunchMsg = Theme.Label("", 10f, Theme.Dim); m_LaunchMsg.Margin = new Padding(0, 0, 0, 10); m_LaunchMsg.Visible = false; m_Wrap.Add(m_LaunchMsg);
+            m_LaunchMsg = Theme.Label("", 11.5f, Theme.Dim, FontStyle.Bold); m_LaunchMsg.Margin = new Padding(0, 0, 0, 10); m_LaunchMsg.Visible = false; m_Wrap.Add(m_LaunchMsg);
             Add(m_LaunchMsg, false);
 
             BuildPairCard();
@@ -199,7 +199,7 @@ namespace XrssHostApp
             m_Dot.Tone = Theme.ToneColor(st.Tone);
             m_Headline.Text = st.Headline; m_Detail.Text = st.Detail;
             m_Notice.Text = st.Notice ?? ""; m_Notice.Visible = st.Notice != null;
-            m_LaunchMsg.Text = st.LaunchStatus ?? ""; m_LaunchMsg.Visible = st.LaunchStatus != null; m_Launch.Enabled = !st.Launching; m_Install.Enabled = !st.Launching;
+            m_LaunchMsg.ForeColor = st.Launching ? Theme.Dim : st.LaunchOk ? Theme.Good : Theme.Warn; m_LaunchMsg.Text = st.LaunchStatus ?? ""; m_LaunchMsg.Visible = st.LaunchStatus != null; m_Launch.Enabled = !st.Launching; m_Install.Enabled = !st.Launching;
             m_HostVal.Text = st.Running ? "Running" : "Stopped";
             m_HeadsetVal.Text = st.HeadsetConnected ? "Connected  -  " + st.HeadsetLabel : "Not connected";
             m_ConnVal.Text = !st.HeadsetConnected ? "-" : (st.Connection ?? "Local network") + (st.LocalAddress != null && st.Connection != "Developer (adb)" ? "  -  " + st.LocalAddress + ":" + st.Port : "");

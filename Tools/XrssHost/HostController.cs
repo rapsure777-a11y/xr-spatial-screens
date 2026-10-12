@@ -40,6 +40,7 @@ namespace XrssHostApp
         public string PairMessage;         // success/failure wording for the pairing panel
         public string LaunchStatus;        // the result of the last "Launch on Headset" click (null until one happens)
         public bool Launching;             // a launch attempt is running
+        public bool LaunchOk;              // the last attempt succeeded
         public string Notice;              // something the user should know (no network, port in use, identity replaced, ...)
         public List<DeviceRow> Devices = new List<DeviceRow>();
     }
@@ -68,7 +69,7 @@ namespace XrssHostApp
 
         /// <summary>Starts the headset app over adb (see <see cref="HeadsetLauncher"/>); null in tests that do not need it.</summary>
         public HeadsetLauncher Launcher { get; set; }
-        string m_LaunchStatus; bool m_Launching;
+        string m_LaunchStatus; bool m_Launching, m_LaunchOk;
 
         /// <summary>The "Launch on Headset" button: runs in the background, reports through the status and a balloon.</summary>
         public void LaunchHeadset() => RunHeadsetJob(false);
@@ -84,7 +85,7 @@ namespace XrssHostApp
             {
                 string msg = t.IsFaulted ? "Could not " + (install ? "install" : "start") + " the headset app: " + t.Exception.GetBaseException().Message : t.Result.Message;
                 m_Log.Info((install ? "install on headset: " : "launch on headset: ") + msg);
-                m_LaunchStatus = msg; m_Launching = false;
+                m_LaunchStatus = msg; m_Launching = false; m_LaunchOk = !t.IsFaulted && t.Result.Ok;
                 Toast?.Invoke(msg); Changed?.Invoke();
             });
         }
@@ -230,7 +231,7 @@ namespace XrssHostApp
 
         public HostStatus Snapshot()
         {
-            var st = new HostStatus { Running = m_Host.IsRunning, Port = m_Host.Port, LaunchStatus = m_LaunchStatus, Launching = m_Launching };
+            var st = new HostStatus { Running = m_Host.IsRunning, Port = m_Host.Port, LaunchStatus = m_LaunchStatus, Launching = m_Launching, LaunchOk = m_LaunchOk };
             var window = m_Host.Window;
             var a = m_Host.Active;
             bool devActive = HostSessions.DevActive;
