@@ -39,7 +39,7 @@ using System.Threading;
 //     'K' stream u16, kind u8, code u32    key: kind 0 type the character (UTF-16 code), 1 key down, 2 key up (Windows virtual-key code); the window is brought to the front first
 static unsafe class Program
 {
-    public const uint ListMagic = 0x4C535258, FrameMagic = 0x32535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258, LayoutMagic = 0x59535258, DepthMagic = 0x44535258;     // 'XRSL', 'XRS2', 'XRSS', 'XRSA', 'XRSY', 'XRSD'
+    public const uint ListMagic = 0x4C535258, FrameMagic = 0x32535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258, LayoutMagic = 0x59535258, DepthMagic = 0x44535258, ModelMagic = 0x4D535258;     // 'XRSL', 'XRS2', 'XRSS', 'XRSA', 'XRSY', 'XRSD'
     public static string CapturePath;
     public static int Fps = 60, MaxW = 2880, Quality = 90;
 
@@ -283,6 +283,13 @@ sealed unsafe class Session
         try { Send(m, data); } catch { m_Gone = true; }
     }
 
+    /// <summary>'XRSM': which depth model is selected and which are installed (bit i of the mask = model id i), so the headset only offers real choices.</summary>
+    void SendModelInfo()
+    {
+        var m = new byte[12]; BitConverter.GetBytes(Program.ModelMagic).CopyTo(m, 0); m[4] = (byte)DepthEstimator.Selected; m[5] = (byte)DepthEstimator.AvailableMask;
+        try { Send(m); } catch { m_Gone = true; }
+    }
+
     void SendStatus(ushort id, byte state)
     {
         var m = new byte[12]; BitConverter.GetBytes(Program.StatusMagic).CopyTo(m, 0); BitConverter.GetBytes(id).CopyTo(m, 4); m[6] = state;
@@ -324,6 +331,13 @@ sealed unsafe class Session
                     case 'L': { Fill(2); Find(BitConverter.ToUInt16(b, 0))?.Injector.Handle(InputInjector.Lost, 0, 0, 0); break; }
                     case 'S': { Fill(1); SetAudio(b[0] != 0); break; }
                     case 'C': { Fill(1); SetCursor(b[0] != 0); break; }
+                    case 'M':                                                                         // Depth Lab option: choose the depth model (0 = the flag files decide)
+                        {
+                            Fill(1); int id = b[0]; bool ok = DepthEstimator.SetModel(id);
+                            Console.WriteLine($"depth model request {id} ({DepthEstimator.ModelName(id)}): {(ok ? "ok" : "not installed")}");
+                            SendModelInfo();
+                            break;
+                        }
                     case 'E':                                                                         // Depth Lab option: edge-aware smoothing level for a stream (0 = off)
                         {
                             Fill(3); var s = Find(BitConverter.ToUInt16(b, 0));
@@ -336,7 +350,7 @@ sealed unsafe class Session
                             if (s != null)
                             {
                                 if (fps > 0 && !DepthEstimator.Ready) { Console.WriteLine($"stream {s.Id}: depth asked for but not available: {DepthEstimator.Problem}"); SendDepth(s.Id, null, 0, 0); fps = 0; }
-                                s.DepthFps = fps; s.DepthCounter = 0; Console.WriteLine($"stream {s.Id}: depth {(fps > 0 ? fps + " fps" : "off")}");
+                                if (fps > 0) SendModelInfo(); s.DepthFps = fps; s.DepthCounter = 0; Console.WriteLine($"stream {s.Id}: depth {(fps > 0 ? fps + " fps" : "off")}");
                             }
                             break;
                         }

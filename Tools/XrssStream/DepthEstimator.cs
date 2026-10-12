@@ -22,22 +22,66 @@ static class DepthEstimator
     public static string Problem { get; private set; }
     public static bool Ready { get { EnsureLoaded(); return s_Session != null; } }
 
+    // Model ids: 1 = Depth Anything V2 small, 2 = Depth Anything 3 small, 3 = Depth Anything 3 Base (Apache-2.0). 0 = whatever the flag files in the models folder choose.
+    static string ModelsDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XrSpatialScreens", "models");
+    static int s_Forced;                                             // chosen from the headset (palette); 0 = follow the flag files
+    static int s_Version;                                            // bumped on every model change, so each stream's smoothing starts fresh
+
+    public static string ModelName(int id) => id == 3 ? "V3 Base" : id == 2 ? "V3 Small" : id == 1 ? "V2 Small" : "none";
+
+    static string FileFor(int id)
+    {
+        string dir = ModelsDir;
+        if (id == 3)
+        {
+            string half = Path.Combine(dir, "da3base", "model_fp16.onnx"), full = Path.Combine(dir, "da3base", "model.onnx");      // half precision is as good and faster
+            return File.Exists(half) ? half : File.Exists(full) ? full : null;
+        }
+        if (id == 2) { string v3 = Path.Combine(dir, "da3", "model.onnx"); return File.Exists(v3) ? v3 : null; }
+        if (id == 1)
+        {
+            string env = Environment.GetEnvironmentVariable("XRSS_DEPTH_MODEL");
+            if (!string.IsNullOrEmpty(env) && File.Exists(env)) return env;
+            string a = Path.Combine(dir, "depth_anything_v2_small.onnx");
+            if (File.Exists(a)) return a;
+            string b = Path.Combine(AppContext.BaseDirectory, "depth_anything_v2_small.onnx");
+            return File.Exists(b) ? b : null;
+        }
+        return null;
+    }
+
+    /// <summary>Bit i set = model id i is installed on this PC.</summary>
+    public static int AvailableMask { get { int m = 0; for (int id = 1; id <= 3; id++) if (FileFor(id) != null) m |= 1 << id; return m; } }
+
+    static int FlagModel()
+    {
+        string dir = ModelsDir;
+        if (File.Exists(Path.Combine(dir, "use_base.flag")) && FileFor(3) != null) return 3;
+        if (File.Exists(Path.Combine(dir, "use_v3.flag")) && FileFor(2) != null) return 2;
+        return 1;
+    }
+
+    /// <summary>The model in use (or about to be loaded): the one chosen on the headset, else the one the flag files pick.</summary>
+    public static int Selected => s_Forced != 0 ? s_Forced : FlagModel();
+
+    /// <summary>Switches model at run time (0 = back to the flag files). False if that model is not installed. The next depth request loads it.</summary>
+    public static bool SetModel(int id)
+    {
+        if (id < 0 || id > 3 || (id != 0 && FileFor(id) == null)) return false;
+        lock (s_Lock)
+        {
+            int before = Selected; s_Forced = id;
+            if (Selected == before && s_Session != null) return true;
+            s_Session?.Dispose(); s_Session = null; s_Tried = false; Problem = null; s_Version++;
+        }
+        return true;
+    }
+
     static string FindModel()
     {
-        string baseDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XrSpatialScreens", "models");
-        // Depth Anything 3 Base (Apache-2.0): models\use_base.flag + models\da3base\model.onnx (or model_fp16.onnx with models\base_fp16.flag). Fixed 504 x 504 input named 'image', output 'depth'.
-        string baseFile = Path.Combine(baseDir, "da3base", File.Exists(Path.Combine(baseDir, "base_fp16.flag")) ? "model_fp16.onnx" : "model.onnx");
-        s_Base = File.Exists(Path.Combine(baseDir, "use_base.flag")) && File.Exists(baseFile);
-        if (s_Base) { s_V3 = false; return baseFile; }
-        string v3 = Path.Combine(baseDir, "da3", "model.onnx");
-        s_V3 = File.Exists(Path.Combine(baseDir, "use_v3.flag")) && File.Exists(v3);
-        if (s_V3) return v3;
-        string env = Environment.GetEnvironmentVariable("XRSS_DEPTH_MODEL");
-        if (!string.IsNullOrEmpty(env) && File.Exists(env)) return env;
-        string a = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XrSpatialScreens", "models", "depth_anything_v2_small.onnx");
-        if (File.Exists(a)) return a;
-        string b = Path.Combine(AppContext.BaseDirectory, "depth_anything_v2_small.onnx");
-        return File.Exists(b) ? b : null;
+        int id = Selected;
+        s_Base = id == 3; s_V3 = id == 2;
+        return FileFor(id);
     }
 
     static void EnsureLoaded()
@@ -62,7 +106,7 @@ static class DepthEstimator
     }
 
     /// <summary>Per-stream smoothing state: the previous depth picture and a slowly moving value range, so the result does not flicker from frame to frame.</summary>
-    public sealed class Smoother { public float[] Prev; public int W, H; public float Min, Max; public bool Init; public byte[] Thumb; public volatile float Edge; }          // Edge: 0 = off (the original behaviour), up to 1 = strongest edge-aware smoothing (headset option)
+    public sealed class Smoother { public int Version; public float[] Prev; public int W, H; public float Min, Max; public bool Init; public byte[] Thumb; public volatile float Edge; }          // Edge: 0 = off (the original behaviour), up to 1 = strongest edge-aware smoothing (headset option)
 
     /// <summary>
     /// Depth for one BGRA frame as an 8-bit picture (255 = near) of at most 256 px wide, same aspect as the frame. Returns null on failure.
@@ -71,6 +115,7 @@ static class DepthEstimator
     {
         ow = oh = 0;
         if (!Ready) return null;
+        if (st.Version != s_Version) { st.Version = s_Version; st.Init = false; st.Prev = null; st.Thumb = null; }          // a different model: start the smoothing fresh
         if (!Changed(bgra, w, h, stride, st)) return null;           // the picture is (nearly) the same as when depth was last made: keep that depth, no flicker and no GPU work
         ow = Math.Min(256, w); oh = Math.Max(16, (int)((long)h * ow / w)); if (oh > 256) { oh = 256; ow = Math.Max(16, (int)((long)w * oh / h)); }
         float[] raw = null;

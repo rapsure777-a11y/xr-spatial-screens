@@ -50,6 +50,7 @@ namespace XrSpatial.Capture
                 m_DepthAsked = want; m_DepthEpoch = RemoteHost.ConnectionEpoch;
                 RemoteHost.RequestDepth(StreamId, want ? DepthRequestFps : 0);
                 m_EdgeSent = -1;
+                if (want && RemoteHost.DepthModelWanted != 0) RemoteHost.RequestModel(RemoteHost.DepthModelWanted);          // the PC forgets the choice when it restarts
                 if (!want) DisposeDepth();
             }
             if (!want) return;

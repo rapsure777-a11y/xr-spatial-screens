@@ -32,7 +32,7 @@ namespace XrSpatial.Capture
     /// </summary>
     public static class RemoteHost
     {
-        const uint FrameMagic = 0x32535258, ListMagic = 0x4C535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258, LayoutMagic = 0x59535258, DepthMagic = 0x44535258, CursorMagic = 0x43535258;       // 'XRS2', 'XRSL', 'XRSS', 'XRSA', 'XRSY', 'XRSD', 'XRSC'
+        const uint FrameMagic = 0x32535258, ListMagic = 0x4C535258, StatusMagic = 0x53535258, AudioMagic = 0x41535258, LayoutMagic = 0x59535258, DepthMagic = 0x44535258, ModelMagic = 0x4D535258, CursorMagic = 0x43535258;       // 'XRS2', 'XRSL', 'XRSS', 'XRSA', 'XRSY', 'XRSD', 'XRSC'
 
         sealed class Stream
         {
@@ -119,6 +119,11 @@ namespace XrSpatial.Capture
                                 if (len == 0) DepthAvailable = false;                                          // this PC cannot make depth
                                 else { DepthAvailable = true; if (s_Streams.TryGetValue(id, out var s) && len == dw * dh) { s.depth = data; s.dw = dw; s.dh = dh; s.depthSeq++; } }
                             }
+                        }
+                        else if (magic == ModelMagic)
+                        {
+                            Read(net, hdr, 8);
+                            DepthModelHost = hdr[0]; DepthModelMask = hdr[1];                                  // which depth model the PC uses, and which ones it has
                         }
                         else if (magic == CursorMagic)
                         {
@@ -358,6 +363,32 @@ namespace XrSpatial.Capture
 
         /// <summary>Increases every time the connection to the host is (re)established.</summary>
         public static int ConnectionEpoch { get; private set; }
+
+        /// <summary>The depth model the PC reports using (1 = V2 Small, 2 = V3 Small, 3 = V3 Base, 0 = not reported yet) and a mask of the ones installed there (bit i = model i).</summary>
+        public static int DepthModelHost, DepthModelMask;
+        /// <summary>The model chosen on the headset (0 = leave the PC's own default). Sent again after every reconnect.</summary>
+        public static int DepthModelWanted;
+
+        public static string DepthModelName(int id) => id == 3 ? "V3 Base" : id == 2 ? "V3 Small" : id == 1 ? "V2 Small" : "PC default";
+
+        /// <summary>Asks the PC to use this depth model (it answers with which one it ended up with).</summary>
+        public static void RequestModel(int id)
+        {
+            DepthModelWanted = id;
+            Write(new byte[] { (byte)'M', (byte)Mathf.Clamp(id, 0, 3) });
+        }
+
+        /// <summary>The next installed model after the current one (wraps); does nothing until the PC has reported what it has.</summary>
+        public static void CycleDepthModel()
+        {
+            if (DepthModelMask == 0) return;
+            int cur = DepthModelHost;
+            for (int i = 1; i <= 3; i++)
+            {
+                int id = (cur + i - 1) % 3 + 1;
+                if ((DepthModelMask & (1 << id)) != 0 && id != cur) { RequestModel(id); return; }
+            }
+        }
 
         /// <summary>Whether the PC can make depth: null until it has answered, false when it has no model or GPU support.</summary>
         public static bool? DepthAvailable { get; private set; }
