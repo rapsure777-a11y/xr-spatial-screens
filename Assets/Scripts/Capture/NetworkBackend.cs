@@ -32,28 +32,31 @@ namespace XrSpatial.Capture
 
         // ------------------------------------------------------------------ Depth Lab (optional; nothing here runs while AI depth is not selected)
 
-        const int DepthRequestFps = 5;                          // depth moves slowly: a few updates a second, smoothed between them here
         Texture2D m_DepthTex;
         byte[] m_DepthTarget, m_DepthCur;
         int m_DepthW, m_DepthH, m_DepthSeen, m_DepthEpoch = -1;
         bool m_DepthAsked;
+        int m_RateSent = -1;                                    // the depth rate the PC was last asked for (-1 = not yet)
         int m_EdgeSent = -1;                                    // the edge-aware smoothing level the PC was last told (-1 = not yet)
 
         public Texture2D Depth => m_DepthTex;
 
         /// <summary>Called every frame by the source: asks the PC for depth while AI depth is selected (and again after a reconnect), and eases the picture towards each new estimate.</summary>
-        public void TickDepth(float dt)
+        public void TickDepth(float dt, int tier = 2)
         {
             bool want = DepthProfiles.MasterOn && DepthProfiles.Live == DepthProfiles.Profile.Ai;
+            // looked at: the chosen rate; in view: a slow 2 Hz at most; not seen: none (the last map stays on the panel)
+            byte rate = tier <= 0 ? (byte)0 : tier == 1 ? (byte)(DepthProfiles.RateByte == 255 ? 2 : Mathf.Min(2, DepthProfiles.RateByte)) : DepthProfiles.RateByte;
             if (want != m_DepthAsked || (want && m_DepthEpoch != RemoteHost.ConnectionEpoch))
             {
                 m_DepthAsked = want; m_DepthEpoch = RemoteHost.ConnectionEpoch;
-                RemoteHost.RequestDepth(StreamId, want ? DepthRequestFps : 0);
+                RemoteHost.RequestDepth(StreamId, want ? rate : 0); m_RateSent = want ? rate : -1;
                 m_EdgeSent = -1;
                 if (want && RemoteHost.DepthModelWanted != 0) RemoteHost.RequestModel(RemoteHost.DepthModelWanted);          // the PC forgets the choice when it restarts
                 if (!want) DisposeDepth();
             }
             if (!want) return;
+            if (rate != m_RateSent) { m_RateSent = rate; RemoteHost.RequestDepth(StreamId, rate); }          // the rate changed in Labs, or the screen came into or left view
             int edge = Mathf.RoundToInt(Mathf.Clamp01(DepthProfiles.EdgeSnap) * 100f);
             if (edge != m_EdgeSent) { m_EdgeSent = edge; RemoteHost.RequestEdge(StreamId, edge); }
             if (RemoteHost.TakeDepth(StreamId, ref m_DepthSeen, out var data, out int w, out int h))

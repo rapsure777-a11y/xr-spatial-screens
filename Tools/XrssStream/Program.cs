@@ -250,7 +250,8 @@ sealed unsafe class Session
 
     // ------------------------------------------------------------------ Depth Lab
 
-    long m_DepthStatAt, m_DepthMsSum; int m_DepthCount;
+    long m_DepthStatAt, m_DepthMsSum, m_DepthMsMax; int m_DepthCount, m_DepthSkipped;
+    volatile int m_StatRate10, m_StatAvgMs, m_StatMaxMs;                      // the last 5 s of depth work, sent to the headset's Labs page
 
     void DepthTick(StreamState s)
     {
@@ -266,8 +267,21 @@ sealed unsafe class Session
                 long t0 = Stopwatch.GetTimestamp();
                 var d = DepthEstimator.Estimate(buf, w, h, stride, s.DepthSmooth, out int ow, out int oh);
                 if (d != null && !s.Ended) SendDepth(s.Id, d, ow, oh);
-                Interlocked.Add(ref m_DepthMsSum, (Stopwatch.GetTimestamp() - t0) * 1000 / Stopwatch.Frequency); Interlocked.Increment(ref m_DepthCount);
-                if (Stopwatch.GetTimestamp() - m_DepthStatAt > 5 * Stopwatch.Frequency) { m_DepthStatAt = Stopwatch.GetTimestamp(); int n = Interlocked.Exchange(ref m_DepthCount, 0); long ms = Interlocked.Exchange(ref m_DepthMsSum, 0); if (n > 0) Console.WriteLine($"depth: {n} maps in 5 s, {ms / n} ms each"); }
+                long took = (Stopwatch.GetTimestamp() - t0) * 1000 / Stopwatch.Frequency;
+                if (d != null)                                                                  // only real maps count; an unchanged picture skips the model and costs nothing
+                {
+                    Interlocked.Add(ref m_DepthMsSum, took); Interlocked.Increment(ref m_DepthCount);
+                    long mx; do { mx = Interlocked.Read(ref m_DepthMsMax); } while (took > mx && Interlocked.CompareExchange(ref m_DepthMsMax, took, mx) != mx);
+                }
+                else Interlocked.Increment(ref m_DepthSkipped);
+                if (Stopwatch.GetTimestamp() - m_DepthStatAt > 5 * Stopwatch.Frequency)
+                {
+                    m_DepthStatAt = Stopwatch.GetTimestamp();
+                    int n = Interlocked.Exchange(ref m_DepthCount, 0), skipped = Interlocked.Exchange(ref m_DepthSkipped, 0); long ms = Interlocked.Exchange(ref m_DepthMsSum, 0), max = Interlocked.Exchange(ref m_DepthMsMax, 0);
+                    m_StatRate10 = n * 2; m_StatAvgMs = n > 0 ? (int)(ms / n) : 0; m_StatMaxMs = (int)max;          // maps per second x 10
+                    if (n > 0 || skipped > 0) Console.WriteLine($"depth: {n} maps in 5 s ({skipped} skipped, picture unchanged), {(n > 0 ? ms / n : 0)} ms each, slowest {max} ms");
+                    SendModelInfo();
+                }
             }
             catch (Exception e) { Console.WriteLine("depth: " + e.Message); }
             finally { Volatile.Write(ref s.DepthBusy, 0); }
@@ -287,6 +301,7 @@ sealed unsafe class Session
     void SendModelInfo()
     {
         var m = new byte[12]; BitConverter.GetBytes(Program.ModelMagic).CopyTo(m, 0); m[4] = (byte)DepthEstimator.Selected; m[5] = (byte)DepthEstimator.AvailableMask;
+        BitConverter.GetBytes((ushort)Math.Min(65535, m_StatRate10)).CopyTo(m, 6); BitConverter.GetBytes((ushort)Math.Min(65535, m_StatAvgMs)).CopyTo(m, 8); BitConverter.GetBytes((ushort)Math.Min(65535, m_StatMaxMs)).CopyTo(m, 10);
         try { Send(m); } catch { m_Gone = true; }
     }
 
@@ -346,11 +361,11 @@ sealed unsafe class Session
                         }
                     case 'D':
                         {
-                            Fill(3); var s = Find(BitConverter.ToUInt16(b, 0)); int fps = Math.Clamp((int)b[2], 0, 15);
+                            Fill(3); var s = Find(BitConverter.ToUInt16(b, 0)); bool auto = b[2] == 255; int fps = auto ? 5 : Math.Clamp((int)b[2], 0, 15);          // 255 = Auto (5 Hz is its ceiling)
                             if (s != null)
                             {
                                 if (fps > 0 && !DepthEstimator.Ready) { Console.WriteLine($"stream {s.Id}: depth asked for but not available: {DepthEstimator.Problem}"); SendDepth(s.Id, null, 0, 0); fps = 0; }
-                                if (fps > 0) SendModelInfo(); s.DepthFps = fps; s.DepthCounter = 0; Console.WriteLine($"stream {s.Id}: depth {(fps > 0 ? fps + " fps" : "off")}");
+                                if (fps > 0) SendModelInfo(); s.DepthSmooth.Auto = auto; s.DepthFps = fps; s.DepthCounter = 0; Console.WriteLine($"stream {s.Id}: depth {(fps > 0 ? fps + " fps" : "off")}");
                             }
                             break;
                         }

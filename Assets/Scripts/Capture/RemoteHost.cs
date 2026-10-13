@@ -123,7 +123,8 @@ namespace XrSpatial.Capture
                         else if (magic == ModelMagic)
                         {
                             Read(net, hdr, 8);
-                            DepthModelHost = hdr[0]; DepthModelMask = hdr[1];                                  // which depth model the PC uses, and which ones it has
+                            DepthModelHost = hdr[0]; DepthModelMask = hdr[1];
+                            DepthRate10 = BitConverter.ToUInt16(hdr, 2); DepthAvgMs = BitConverter.ToUInt16(hdr, 4); DepthMaxMs = BitConverter.ToUInt16(hdr, 6);                                  // which depth model the PC uses, and which ones it has
                         }
                         else if (magic == CursorMagic)
                         {
@@ -366,6 +367,8 @@ namespace XrSpatial.Capture
 
         /// <summary>The depth model the PC reports using (1 = V2 Small, 2 = V3 Small, 3 = V3 Base, 0 = not reported yet) and a mask of the ones installed there (bit i = model i).</summary>
         public static int DepthModelHost, DepthModelMask;
+        /// <summary>What the PC measured over its last 5 seconds of depth work: maps per second x 10, average and slowest time of one map in milliseconds.</summary>
+        public static int DepthRate10, DepthAvgMs, DepthMaxMs;
         /// <summary>The model chosen on the headset (0 = leave the PC's own default). Sent again after every reconnect.</summary>
         public static int DepthModelWanted;
 
@@ -396,7 +399,7 @@ namespace XrSpatial.Capture
         /// <summary>Asks the PC to estimate depth for a stream at the given rate (0 = off, the default). Must be resent after a reconnect (<see cref="ConnectionEpoch"/>).</summary>
         public static void RequestDepth(ushort id, int fps)
         {
-            var m = new byte[4]; m[0] = (byte)'D'; BitConverter.GetBytes(id).CopyTo(m, 1); m[3] = (byte)Mathf.Clamp(fps, 0, 15);
+            var m = new byte[4]; m[0] = (byte)'D'; BitConverter.GetBytes(id).CopyTo(m, 1); m[3] = (byte)(fps == 255 ? 255 : Mathf.Clamp(fps, 0, 15));
             Write(m);
         }
 

@@ -22,6 +22,23 @@ namespace XrSpatial.Spatial
         public static float Smoothing { get => XrSpatial.Capture.DepthProfiles.Smoothing; private set => XrSpatial.Capture.DepthProfiles.Smoothing = value; }
         /// <summary>0 = off (depth as before), 1 = the PC keeps depth edges on the picture's edges: less halo around objects. Applied on the PC, so it costs a little PC time.</summary>
         public static float EdgeSnap { get => XrSpatial.Capture.DepthProfiles.EdgeSnap; private set => XrSpatial.Capture.DepthProfiles.EdgeSnap = value; }
+        /// <summary>When on (the default), depth is made only for screens you can see: the one you look at gets the full rate, others in view a slow one, the rest none.</summary>
+        public static bool ViewAware { get => UnityEngine.PlayerPrefs.GetInt("xrss.depthViewAware", 1) != 0; }
+        public static void ToggleViewAware() { UnityEngine.PlayerPrefs.SetInt("xrss.depthViewAware", ViewAware ? 0 : 1); UnityEngine.PlayerPrefs.Save(); }
+        public const float GazeAngle = 20f, ViewAngle = 60f;            // degrees from where the head points: inside GazeAngle = looked at, inside ViewAngle = in view
+
+        /// <summary>2 = looked at, 1 = in view, 0 = out of view. The smallest angle between the head's forward direction and the panel's centre, corners or edge middles decides, so a big panel counts when its edge is where you look.</summary>
+        public static int ViewTier(Vector3 headPos, Vector3 headForward, Vector3[] corners)
+        {
+            if (corners == null || corners.Length < 4) return 2;
+            var pts = new Vector3[9];
+            for (int i = 0; i < 4; i++) { pts[i] = corners[i]; pts[4 + i] = (corners[i] + corners[(i + 1) % 4]) * 0.5f; }
+            pts[8] = (corners[0] + corners[1] + corners[2] + corners[3]) * 0.25f;
+            float best = 180f;
+            foreach (var p in pts) { var d = p - headPos; if (d.sqrMagnitude > 1e-8f) best = Mathf.Min(best, Vector3.Angle(headForward, d)); }
+            return best < GazeAngle ? 2 : best < ViewAngle ? 1 : 0;
+        }
+
         /// <summary>Bumped on every change, so panels only push parameters when something changed.</summary>
         public static int Version { get; private set; }
 

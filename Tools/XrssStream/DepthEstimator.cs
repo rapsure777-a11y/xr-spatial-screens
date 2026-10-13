@@ -106,7 +106,7 @@ static class DepthEstimator
     }
 
     /// <summary>Per-stream smoothing state: the previous depth picture and a slowly moving value range, so the result does not flicker from frame to frame.</summary>
-    public sealed class Smoother { public int Version; public float[] Prev; public int W, H; public float Min, Max; public bool Init; public byte[] Thumb; public volatile float Edge; }          // Edge: 0 = off (the original behaviour), up to 1 = strongest edge-aware smoothing (headset option)
+    public sealed class Smoother { public bool Auto; public long LastMapAt; public int Version; public float[] Prev; public int W, H; public float Min, Max; public bool Init; public byte[] Thumb; public volatile float Edge; }          // Edge: 0 = off (the original behaviour), up to 1 = strongest edge-aware smoothing (headset option)
 
     /// <summary>
     /// Depth for one BGRA frame as an 8-bit picture (255 = near) of at most 256 px wide, same aspect as the frame. Returns null on failure.
@@ -198,6 +198,7 @@ static class DepthEstimator
             st.Prev[i] = d;
             outb[i] = (byte)Math.Round(d * 255f);
         }
+        st.LastMapAt = System.Diagnostics.Stopwatch.GetTimestamp();
         return outb;
     }
 
@@ -232,6 +233,12 @@ static class DepthEstimator
             int moved = 0;
             for (int i = 0; i < t.Length; i++) if (Math.Abs(t[i] - st.Thumb[i]) > 12) moved++;
             if (moved < 6) return false;                              // fewer than 6 of 1296 sample points changed visibly
+            if (st.Auto)
+            {
+                // Auto rate: a calm picture refreshes slowly, a busy one faster, a big scene change at once (5 Hz polling is the ceiling)
+                long minMs = moved >= 60 ? 0 : moved >= 20 ? 400 : 800;
+                if (st.LastMapAt != 0 && (System.Diagnostics.Stopwatch.GetTimestamp() - st.LastMapAt) * 1000 / System.Diagnostics.Stopwatch.Frequency < minMs) return false;
+            }
         }
         st.Thumb = t;
         return true;
